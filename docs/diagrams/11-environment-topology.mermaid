@@ -1,0 +1,88 @@
+---
+title: "Flox Environment Topology"
+---
+graph TB
+    subgraph FloxHub["FloxHub (Published)"]
+        direction TB
+
+        subgraph SkillPkgs["Skill Packages"]
+            direction LR
+            SKC["floxbot/<br/>core-canon"]
+            SK1["floxbot/<br/>skill-k8s"]
+            SK2["floxbot/<br/>skill-terraform"]
+            SK3["floxbot/<br/>skill-aws"]
+            SK4["floxbot/<br/>skill-gcp"]
+            SK5["floxbot/<br/>skill-docker"]
+            SK6["floxbot/<br/>skill-postgres"]
+            SK7["floxbot/<br/>skill-rust"]
+            SK8["floxbot/<br/>skill-python"]
+        end
+
+        subgraph Shared["Shared Infrastructure"]
+            SH["floxbot/<br/>shared<br/><br/>Common types<br/>MCP server def<br/>Config schemas"]
+        end
+    end
+
+    subgraph Runtime["Runtime Environments"]
+        direction TB
+        
+        subgraph Infra["Infrastructure (Internal)"]
+            direction LR
+            RAPI["support-bot-api/<br/><br/>Central API<br/>Python + FastAPI<br/>LLM orchestration"]
+            RKAF["support-bot-kafka/<br/><br/>Kafka + Zookeeper<br/>Event backbone"]
+            RFLI["support-bot-flink/<br/><br/>Flink JobManager<br/>+ TaskManager<br/>4 streaming jobs"]
+        end
+
+        subgraph Adapters["Channel Adapters"]
+            direction LR
+            RSL["support-bot-slack/<br/><br/>Node.js + Bolt SDK<br/>Socket Mode"]
+            RDC["support-bot-discord/<br/><br/>Node.js + discord.js<br/>Gateway WebSocket"]
+            REM["support-bot-email/<br/><br/>Python<br/>SendGrid inbound"]
+        end
+
+        subgraph UserFacing["User-Facing"]
+            direction LR
+            RCLI["support-bot-cli/<br/><br/>Python (lightweight)<br/>ask · chat<br/>Distributed to users"]
+            RCP["support-bot-copilot/<br/><br/>Python (full-featured)<br/>ask · chat · diagnose<br/>learn · feedback · ticket<br/>Local-first + sync"]
+        end
+    end
+
+    subgraph BuildTest["Build + Test"]
+        RCAN["support-bot-canon/<br/><br/>Canon Forge<br/>PostgreSQL + pgvector<br/>Embedding pipeline<br/>Eval harness"]
+    end
+
+    %% Composition relationships
+    SH -->|"[include]"| RAPI
+    SH -->|"[include]"| RSL
+    SH -->|"[include]"| RDC
+    SH -->|"[include]"| REM
+    SH -->|"[include]"| RCLI
+    SH -->|"[include]"| RCP
+
+    SKC -->|"[include]"| RCAN
+    SK1 & SK2 & SK3 -->|"[include]"| RCAN
+
+    %% Runtime relationships
+    RSL & RDC & REM & RCLI & RCP -->|"HTTP"| RAPI
+    RAPI -->|"Publish"| RKAF
+    RKAF -->|"Consume"| RFLI
+    RCAN -->|"Embeddings"| RAPI
+
+    %% User-facing special relationships
+    RCP -->|"FloxHub auth"| FloxHub
+    RCP -->|"Canon sync"| RCAN
+    RCLI -->|"FloxHub auth"| FloxHub
+
+    classDef skill fill:#2d3748,stroke:#ed8936,color:#ed8936,stroke-width:2px
+    classDef shared fill:#2d3748,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+    classDef infra fill:#1a202c,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef adapter fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef user fill:#2a4365,stroke:#90cdf4,color:#90cdf4,stroke-width:2px
+    classDef build fill:#553c22,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+
+    class SKC,SK1,SK2,SK3,SK4,SK5,SK6,SK7,SK8 skill
+    class SH shared
+    class RAPI,RKAF,RFLI infra
+    class RSL,RDC,REM adapter
+    class RCLI,RCP user
+    class RCAN build

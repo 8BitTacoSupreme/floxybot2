@@ -1,0 +1,89 @@
+---
+title: "Knowledge Tiers + Feedback Loop"
+---
+graph TB
+    subgraph Tier1["Tier 1 — User Memory (real-time)"]
+        T1A["Projects & manifest patterns"]
+        T1B["Skill level tracking"]
+        T1C["Past issues & resolutions"]
+        T1D["Communication preferences"]
+        T1E["Frequently used skills"]
+    end
+
+    subgraph Tier2["Tier 2 — Instance Knowledge (daily)"]
+        T2A["Org-level patterns<br/>'users keep hitting X error'"]
+        T2B["Popular questions /<br/>trending issues"]
+        T2C["Community-voted<br/>best answers"]
+        T2D["Skill package<br/>performance scores"]
+    end
+
+    subgraph Tier3["Tier 3 — Upstream Canon (weekly, curated)"]
+        T3A["Flox docs +<br/>SKILL.md corpus"]
+        T3B["Curated Q&A pairs"]
+        T3C["Release notes +<br/>changelogs"]
+        T3D["Resolved Intercom<br/>tickets"]
+        T3E["Fine-tuning<br/>datasets"]
+    end
+
+    subgraph Votes["Vote Pipeline"]
+        V1["Raw votes<br/>(all channels)"]
+        V2["Daily aggregation"]
+        V3["High-voted responses"]
+        V4["Downvote clusters"]
+        V5["User skill calibration"]
+    end
+
+    subgraph Feedback["Field Feedback Pipeline (Pro/Enterprise)"]
+        FB1["copilot-feedback"]
+        FB2["Auto-classify:<br/>doc_gap · feature_req<br/>bug · pattern · skill"]
+        FB3["Auto-enrich:<br/>manifest · env info<br/>convo · skill level"]
+    end
+
+    subgraph Outputs["Downstream"]
+        O1["📊 Dashboard"]
+        O2["🏗️ Canon Forge"]
+        O3["📋 PM Board"]
+        O4["🔧 Engineering"]
+        O5["📦 Skill Maintainers"]
+    end
+
+    %% Vote flow
+    V1 --> V2
+    V2 --> V3 --> T2C
+    V2 --> V4 -->|"Canon gap<br/>detection"| O2
+    V2 --> V5 --> T1B
+    V2 --> O1
+
+    %% Weekly upstream
+    T2C -->|"Weekly export<br/>(anonymized,<br/>human-reviewed)"| T3B
+    T2C --> T3E
+
+    %% Feedback flow
+    FB1 --> FB2 --> FB3
+    FB3 -->|"doc_gap"| O2
+    FB3 -->|"feature_req"| O3
+    FB3 -->|"bug"| O4
+    FB3 -->|"skill_improvement"| O5
+    FB3 -->|"pattern"| O2
+
+    %% Canon forge outputs
+    O2 -->|"Updated embeddings"| T3A
+    O2 -->|"New Q&A"| T3B
+
+    %% Tiers feed into each other
+    T3B -.->|"Seeds"| T2C
+    T1B -.->|"Calibrates<br/>response depth"| Tier2
+
+    classDef tier1 fill:#2d3748,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef tier2 fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef tier3 fill:#2d3748,stroke:#ed8936,color:#ed8936,stroke-width:2px
+    classDef vote fill:#2d3748,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+    classDef feedback fill:#2d3748,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+    classDef output fill:#1a202c,stroke:#e2e8f0,color:#e2e8f0,stroke-width:2px
+
+    class T1A,T1B,T1C,T1D,T1E tier1
+    class T2A,T2B,T2C,T2D tier2
+    class T3A,T3B,T3C,T3D,T3E tier3
+    class V1,V2,V3,V4,V5 vote
+    class FB1,FB2,FB3 feedback
+    class O1,O2,O3,O4,O5 output

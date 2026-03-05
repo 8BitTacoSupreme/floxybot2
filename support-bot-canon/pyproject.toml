@@ -1,0 +1,20 @@
+[project]
+name = "support-bot-canon"
+version = "0.1.0"
+description = "FloxBot canon forge — knowledge indexing and evaluation"
+requires-python = ">=3.12"
+dependencies = [
+    "voyageai>=0.3,<1",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.30,<1",
+    "pgvector>=0.3,<1",
+    "support-bot-shared",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]

@@ -1,0 +1,99 @@
+---
+title: "Support Escalation Flow"
+---
+flowchart TB
+    START["User Query Arrives"]
+    
+    START --> CLASS["Intent + Complexity<br/>Classification"]
+    
+    CLASS -->|"Simple, high-confidence<br/>match in canon"| L1
+    CLASS -->|"Complex, needs<br/>reasoning/tools"| L2
+    CLASS -->|"Billing, account,<br/>security"| ESC
+    CLASS -->|"'talk to a human'"| ESC
+
+    subgraph L1["L1 — Instant Resolution (target: 80%)"]
+        L1A["RAG lookup against canon"]
+        L1B["Skill package Q&A match"]
+        L1C["Response + vote buttons"]
+        
+        L1A --> L1B --> L1C
+    end
+
+    L1C -->|"👍"| DONE["Resolved ✅"]
+    L1C -->|"👎 or<br/>follow-up"| L2
+
+    subgraph L2["L2 — Contextual Problem-Solving (target: 15%)"]
+        L2A["Load user memory<br/>+ project context"]
+        L2B["Detect + load<br/>skill packages"]
+        L2C["Multi-turn reasoning<br/>(Claude orchestrates)"]
+        L2D["MCP tool use<br/>(flox search, validate)"]
+        L2E["Code generation<br/>(Codex delegates)"]
+        L2F["Response + vote buttons"]
+        
+        L2A --> L2B --> L2C
+        L2C --> L2D
+        L2C --> L2E
+        L2D & L2E --> L2F
+    end
+
+    L2F -->|"👍"| DONE
+    L2F -->|"👎 × 3 on<br/>same topic"| ESC
+    L2F -->|"Confidence<br/>< threshold"| ESC
+
+    subgraph ESC["Escalation to Human (<5%)"]
+        direction TB
+        
+        TIER{"User tier?"}
+        
+        subgraph CommEsc["Community Escalation"]
+            CE1["Basic Intercom ticket"]
+            CE2["Conversation attached"]
+            CE3["Standard priority queue"]
+        end
+        
+        subgraph ProEsc["Pro Escalation (copilot-ticket)"]
+            PE1["🎫 Bot-Triaged Ticket"]
+            PE2["Full context bundle:<br/>• Conversation history<br/>• Manifest (sanitized)<br/>• Environment metadata<br/>• Flox version + system<br/>• Active skills<br/>• Attempted resolutions<br/>• Co-pilot progress"]
+            PE3["Auto-triage:<br/>• Suggested priority (P1-P4)<br/>• Category classification<br/>• Related known issues"]
+            PE4["Priority support queue"]
+        end
+        
+        subgraph EntEsc["Enterprise Escalation"]
+            EE1["Everything in Pro, plus:"]
+            EE2["Org pattern matching:<br/>'3 other teams in your org<br/>hit this same issue'"]
+            EE3["SLA-tracked queue"]
+            EE4["Dedicated support routing"]
+        end
+
+        TIER -->|"Community"| CommEsc
+        TIER -->|"Pro"| ProEsc
+        TIER -->|"Enterprise"| EntEsc
+    end
+
+    CommEsc --> HUMAN["👤 Human Support"]
+    ProEsc --> HUMAN
+    EntEsc --> HUMAN
+
+    subgraph Triggers["Automatic Escalation Triggers"]
+        TR1["Confidence < threshold"]
+        TR2["3+ failed attempts<br/>on same topic"]
+        TR3["User frustration<br/>signal detected"]
+        TR4["Topic: billing /<br/>account / security"]
+        TR5["Explicit request:<br/>'talk to a human'"]
+    end
+
+    Triggers -.-> ESC
+
+    classDef l1 fill:#22543d,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef l2 fill:#2a4365,stroke:#90cdf4,color:#90cdf4,stroke-width:2px
+    classDef esc fill:#553c22,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+    classDef done fill:#22543d,stroke:#9ae6b4,color:#9ae6b4,stroke-width:2px
+    classDef trigger fill:#63171b,stroke:#fc8181,color:#fc8181,stroke-width:2px
+    classDef decision fill:#2d3748,stroke:#e2e8f0,color:#e2e8f0,stroke-width:2px
+
+    class L1A,L1B,L1C l1
+    class L2A,L2B,L2C,L2D,L2E,L2F l2
+    class CE1,CE2,CE3,PE1,PE2,PE3,PE4,EE1,EE2,EE3,EE4 esc
+    class DONE done
+    class TR1,TR2,TR3,TR4,TR5 trigger
+    class CLASS,TIER,START decision

@@ -1,0 +1,16 @@
+[project]
+name = "support-bot-shared"
+version = "0.1.0"
+description = "Shared types, schemas, and configuration for FloxBot"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0,<3",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

@@ -1,0 +1,109 @@
+---
+title: "Kafka + Flink Event Backbone"
+---
+graph TB
+    subgraph Sources["Event Sources"]
+        direction LR
+        SL["Slack"]
+        DC["Discord"]
+        EM["Email"]
+        CLI["CLI"]
+        CP["Co-Pilot"]
+        API["Central API"]
+    end
+
+    subgraph Kafka["Kafka Topics"]
+        direction TB
+        KIN[".inbound<br/>All normalized messages<br/>Key: conversation_id"]
+        KOUT[".outbound<br/>Bot responses<br/>Key: channel + user_id"]
+        KV[".votes<br/>Structured vote events<br/>Key: user_id"]
+        KC[".context<br/>Skill detection, project ctx<br/>Key: user_id"]
+        KE[".escalations<br/>Ticket creation events<br/>Key: conversation_id"]
+        KF[".feedback<br/>Field feedback (Pro/Ent)<br/>Key: user_id"]
+        KX[".sessions.xc<br/>Cross-channel sessions<br/>Key: canonical_user_id"]
+        KT[".telemetry<br/>Anonymized env data<br/>Key: (none)"]
+        KCU[".canon.updates<br/>Canon refresh events<br/>Key: (none)"]
+    end
+
+    SL & DC & EM & CLI & CP -.-> KIN
+    API -.-> KOUT
+    SL & DC & EM & CLI & CP -.-> KV
+    API -.-> KC
+    API -.-> KE
+    CP -.-> KF
+    CP -.-> KT
+
+    subgraph Flink["Flink Streaming Jobs"]
+        direction TB
+        
+        subgraph FJ1["Job 1: Vote Aggregation"]
+            FJ1A["Window: Tumbling 1h + Sliding 24h"]
+            FJ1B["Per-topic vote rates"]
+            FJ1C["Per-skill performance"]
+            FJ1D["Per-user satisfaction trend"]
+            FJ1E["⚠️ Anomaly: downvote spike<br/>= possible release regression"]
+        end
+
+        subgraph FJ2["Job 2: Cross-Channel Correlation"]
+            FJ2A["Window: Session, 30-min gap"]
+            FJ2B["Key: canonical_user_id"]
+            FJ2C["Same user + similar topic<br/>across channels within window"]
+            FJ2D["Emit confidence score<br/>to .sessions.xc"]
+        end
+
+        subgraph FJ3["Job 3: Canon Gap Detection"]
+            FJ3A["Window: Daily tumbling"]
+            FJ3B["Cluster downvoted queries<br/>by topic"]
+            FJ3C["Cross-reference with<br/>skill package coverage"]
+            FJ3D["'skill:terraform has 40%<br/>downvote rate on TF Cloud'"]
+        end
+
+        subgraph FJ4["Job 4: Trending Issues"]
+            FJ4A["Window: Sliding 4-hour"]
+            FJ4B["Extract error signatures<br/>from inbound messages"]
+            FJ4C["Detect sudden spikes"]
+            FJ4D["'10 users hit same error<br/>in 2 hours'"]
+        end
+    end
+
+    KV --> FJ1
+    KIN --> FJ2
+    KV & KC --> FJ3
+    KIN --> FJ4
+
+    subgraph Sinks["Downstream Consumers"]
+        DASH["📊 Dashboard<br/>(real-time metrics)"]
+        ALERT["🚨 Alerting<br/>(team Slack)"]
+        CANON["🏗️ Canon Forge<br/>(improvement queue)"]
+        XCTX["🔗 Cross-Channel<br/>Context Store"]
+        ICOM["🎫 Intercom<br/>(ticket creation)"]
+        FBPIPE["📝 Feedback<br/>Pipeline"]
+    end
+
+    FJ1 --> DASH
+    FJ1E --> ALERT
+    FJ2D --> XCTX
+    FJ3D --> CANON
+    FJ4D --> ALERT
+    KE --> ICOM
+    KF --> FBPIPE
+    KCU -->|"All bot instances<br/>refresh canon"| Sources
+
+    subgraph NotKafka["⚡ NOT in Kafka (Sync HTTP)"]
+        direction LR
+        HP1["User message"] --> HP2["Central API"] --> HP3["LLM call"] --> HP4["Response"]
+        style HP1 fill:#553c22,stroke:#fbd38d,color:#fbd38d
+        style HP2 fill:#553c22,stroke:#fbd38d,color:#fbd38d
+        style HP3 fill:#553c22,stroke:#fbd38d,color:#fbd38d
+        style HP4 fill:#553c22,stroke:#fbd38d,color:#fbd38d
+    end
+
+    classDef source fill:#4a5568,stroke:#e2e8f0,color:#e2e8f0,stroke-width:2px
+    classDef topic fill:#2d3748,stroke:#ed8936,color:#ed8936,stroke-width:2px
+    classDef flink fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef sink fill:#1a202c,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+
+    class SL,DC,EM,CLI,CP,API source
+    class KIN,KOUT,KV,KC,KE,KF,KX,KT,KCU topic
+    class FJ1A,FJ1B,FJ1C,FJ1D,FJ1E,FJ2A,FJ2B,FJ2C,FJ2D,FJ3A,FJ3B,FJ3C,FJ3D,FJ4A,FJ4B,FJ4C,FJ4D flink
+    class DASH,ALERT,CANON,XCTX,ICOM,FBPIPE sink

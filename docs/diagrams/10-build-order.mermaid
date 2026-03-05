@@ -1,0 +1,55 @@
+---
+title: "Build Order — Phased Delivery"
+---
+gantt
+    title FloxBot Build Phases
+    dateFormat YYYY-MM-DD
+    axisFormat %b %Y
+
+    section Phase 1: Foundation
+        Central API skeleton               :p1a, 2026-03-15, 3w
+        Canon ingest pipeline              :p1b, 2026-03-15, 2w
+        RAG retrieval (pgvector)           :p1c, after p1b, 2w
+        CLI adapter                        :p1d, after p1a, 2w
+        FloxHub auth integration           :p1e, after p1a, 1w
+        Vote collection (store only)       :p1f, after p1d, 1w
+
+    section Phase 2: Co-Pilot + Entitlements
+        Co-Pilot env (ask/chat/diagnose)   :p2a, after p1f, 3w
+        Entitlement gate                   :p2b, after p1e, 2w
+        Local canon sync                   :p2c, after p2a, 2w
+        Local memory persistence           :p2d, after p2a, 1w
+        Offline vote/feedback queuing      :p2e, after p2d, 1w
+
+    section Phase 3: Multi-Channel
+        Slack adapter (Socket Mode)        :p3a, after p2b, 3w
+        Discord adapter (Gateway)          :p3b, after p3a, 2w
+        Email adapter (SendGrid)           :p3c, after p3b, 2w
+        Cross-channel identity             :p3d, after p3a, 2w
+        Intercom escalation bridge         :p3e, after p3d, 2w
+        L1/L2 classification               :p3f, after p3a, 1w
+
+    section Phase 4: Intelligence
+        Codex integration                  :p4a, after p3f, 2w
+        Skill detection engine             :p4b, after p3f, 3w
+        Dynamic skill loading              :p4c, after p4b, 2w
+        User memory (Tier 1)               :p4d, after p4a, 2w
+        Instance knowledge (Tier 2)        :p4e, after p4d, 2w
+        MCP server (flox ops)              :p4f, after p4a, 2w
+
+    section Phase 5: Streaming + Feedback
+        Kafka event backbone               :p5a, after p4c, 3w
+        Flink: vote aggregation            :p5b, after p5a, 2w
+        Flink: cross-channel correlation   :p5c, after p5b, 2w
+        Flink: canon gaps + trending       :p5d, after p5c, 2w
+        Field feedback pipeline            :p5e, after p5a, 2w
+        Triaged tickets (copilot-ticket)   :p5f, after p5e, 1w
+        Co-pilot learn mode                :p5g, after p5f, 3w
+
+    section Phase 6: Enterprise
+        Org knowledge layer                :p6a, after p5g, 3w
+        Custom skill packages              :p6b, after p5g, 2w
+        SSO integration                    :p6c, after p6a, 2w
+        Admin dashboard                    :p6d, after p6a, 3w
+        Priority escalation + SLA          :p6e, after p6c, 2w
+        Environment telemetry              :p6f, after p6d, 2w

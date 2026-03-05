@@ -1,0 +1,118 @@
+version = 1
+
+[install]
+python3.pkg-path = "python313"
+uv.pkg-path = "uv"
+postgresql.pkg-path = "postgresql_16"
+pgvector.pkg-path = "postgresql16Packages.pgvector"
+redis.pkg-path = "redis"
+kafka.pkg-path = "apacheKafka"
+
+[vars]
+FLOXBOT_DB_NAME = "floxbot"
+FLOXBOT_DB_USER = "floxbot"
+FLOXBOT_DB_PASSWORD = "floxbot"
+FLOXBOT_PG_PORT = "5432"
+FLOXBOT_REDIS_PORT = "6379"
+FLOXBOT_KAFKA_PORT = "9092"
+KAFKA_CLUSTER_ID = "floxbot-dev-cluster-001"
+
+[hook]
+on-activate = '''
+  # --- PostgreSQL init (idempotent) ---
+  PG_DATA="$FLOX_ENV_CACHE/pgdata"
+  if [ ! -d "$PG_DATA" ]; then
+    echo "Initializing PostgreSQL data directory..."
+    initdb -D "$PG_DATA" --auth=trust --username="$FLOXBOT_DB_USER" >/dev/null 2>&1
+    echo "port = $FLOXBOT_PG_PORT" >> "$PG_DATA/postgresql.conf"
+    echo "unix_socket_directories = '"'"'$FLOX_ENV_CACHE'"'"'" >> "$PG_DATA/postgresql.conf"
+    echo "listen_addresses = '"'"'localhost'"'"'" >> "$PG_DATA/postgresql.conf"
+  fi
+
+  # --- Symlink pgvector extension into PG lib/share (idempotent) ---
+  PG_LIB_DIR="$(pg_config --pkglibdir)"
+  PG_SHARE_DIR="$(pg_config --sharedir)/extension"
+  PGVEC_SHARE="$(dirname "$(dirname "$(which pg_config)")")/share/postgresql/extension"
+  PGVEC_LIB="$(dirname "$(dirname "$(which pg_config)")")/lib"
+  # Find pgvector files from the Flox store and symlink them
+  for f in $(find "$FLOX_ENV/share/postgresql/extension" -name "vector*" 2>/dev/null); do
+    BASENAME="$(basename "$f")"
+    if [ ! -e "$PG_SHARE_DIR/$BASENAME" ]; then
+      ln -sf "$f" "$PG_SHARE_DIR/$BASENAME" 2>/dev/null || true
+    fi
+  done
+  for f in $(find "$FLOX_ENV/lib" -name "vector*" 2>/dev/null); do
+    BASENAME="$(basename "$f")"
+    if [ ! -e "$PG_LIB_DIR/$BASENAME" ]; then
+      ln -sf "$f" "$PG_LIB_DIR/$BASENAME" 2>/dev/null || true
+    fi
+  done
+
+  # --- Redis config (idempotent) ---
+  REDIS_CONF="$FLOX_ENV_CACHE/redis.conf"
+  if [ ! -f "$REDIS_CONF" ]; then
+    echo "Creating Redis config..."
+    cat > "$REDIS_CONF" <<REDISEOF
+port $FLOXBOT_REDIS_PORT
+bind 127.0.0.1
+dir $FLOX_ENV_CACHE
+dbfilename floxbot-redis.rdb
+REDISEOF
+  fi
+
+  # --- Kafka KRaft config (idempotent, no Zookeeper) ---
+  KAFKA_LOGS="$FLOX_ENV_CACHE/kafka-logs"
+  KAFKA_CONF="$FLOX_ENV_CACHE/kafka-kraft.properties"
+  if [ ! -d "$KAFKA_LOGS" ]; then
+    mkdir -p "$KAFKA_LOGS"
+  fi
+  if [ ! -f "$KAFKA_CONF" ]; then
+    echo "Creating Kafka KRaft config..."
+    cat > "$KAFKA_CONF" <<KAFKAEOF
+process.roles=broker,controller
+node.id=1
+controller.quorum.voters=1@localhost:9093
+listeners=PLAINTEXT://localhost:$FLOXBOT_KAFKA_PORT,CONTROLLER://localhost:9093
+inter.broker.listener.name=PLAINTEXT
+advertised.listeners=PLAINTEXT://localhost:$FLOXBOT_KAFKA_PORT
+controller.listener.names=CONTROLLER
+listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+log.dirs=$KAFKA_LOGS
+num.partitions=3
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+log.retention.hours=168
+KAFKAEOF
+    # Format the storage for KRaft
+    kafka-storage.sh format -t "$KAFKA_CLUSTER_ID" -c "$KAFKA_CONF" >/dev/null 2>&1
+  fi
+
+  # --- Python venv (idempotent) ---
+  VENV_DIR="$FLOX_ENV_CACHE/venv"
+  if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating Python venv..."
+    python3 -m venv "$VENV_DIR"
+  fi
+
+  # Export connection URLs
+  export FLOXBOT_DATABASE_URL="postgresql+asyncpg://$FLOXBOT_DB_USER:$FLOXBOT_DB_PASSWORD@localhost:$FLOXBOT_PG_PORT/$FLOXBOT_DB_NAME"
+  export FLOXBOT_REDIS_URL="redis://localhost:$FLOXBOT_REDIS_PORT/0"
+  export FLOXBOT_KAFKA_BOOTSTRAP="localhost:$FLOXBOT_KAFKA_PORT"
+'''
+
+[profile]
+common = '''
+  source "$FLOX_ENV_CACHE/venv/bin/activate"
+  export FLOXBOT_DATABASE_URL="postgresql+asyncpg://$FLOXBOT_DB_USER:$FLOXBOT_DB_PASSWORD@localhost:$FLOXBOT_PG_PORT/$FLOXBOT_DB_NAME"
+  export FLOXBOT_REDIS_URL="redis://localhost:$FLOXBOT_REDIS_PORT/0"
+  export FLOXBOT_KAFKA_BOOTSTRAP="localhost:$FLOXBOT_KAFKA_PORT"
+'''
+
+[services]
+postgres.command = "postgres -D $FLOX_ENV_CACHE/pgdata"
+redis.command = "redis-server $FLOX_ENV_CACHE/redis.conf"
+kafka.command = "kafka-server-start.sh $FLOX_ENV_CACHE/kafka-kraft.properties"
+
+[options]
+systems = ["aarch64-darwin", "x86_64-linux", "aarch64-linux"]

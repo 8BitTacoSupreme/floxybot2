@@ -1,0 +1,111 @@
+---
+title: "FloxBot System Overview"
+---
+graph TB
+    subgraph Channels["Channel Adapters"]
+        direction LR
+        SL["🟣 Slack<br/>Socket Mode"]
+        DC["🔵 Discord<br/>Gateway"]
+        EM["📧 Email<br/>SendGrid"]
+        CLI["⌨️ CLI<br/>Lightweight"]
+        CP["🧠 Co-Pilot<br/>Local-First"]
+    end
+
+    subgraph EventBus["Kafka Event Bus"]
+        direction LR
+        TI[".inbound"]
+        TO[".outbound"]
+        TV[".votes"]
+        TC[".context"]
+        TE[".escalations"]
+        TF[".feedback"]
+        TX[".sessions.xc"]
+        TT[".telemetry"]
+    end
+
+    subgraph StreamProc["Flink Stream Processing"]
+        direction LR
+        F1["Vote<br/>Aggregation"]
+        F2["Cross-Channel<br/>Correlation"]
+        F3["Canon Gap<br/>Detection"]
+        F4["Trending<br/>Issues"]
+    end
+
+    subgraph CentralAPI["Central API — The Brain"]
+        AUTH["Auth +<br/>Entitlement Gate"]
+        CTX["Context Engine"]
+        SKILL["Skill Detection<br/>+ Loading"]
+        ROUTER["Router /<br/>Orchestrator"]
+
+        subgraph LLMs["LLM Backends"]
+            CLAUDE["☀️ Claude<br/>Conversation · Reasoning<br/>Teaching · Orchestration"]
+            CODEX["⚡ Codex<br/>Code Gen · Manifest Editing<br/>Debugging · Refactoring"]
+        end
+
+        subgraph Knowledge["Knowledge Layer"]
+            RAG["Canon +<br/>RAG Engine"]
+            SKILLS["Skill<br/>Packages"]
+            MEM["User<br/>Memory"]
+            MCP["Flox<br/>MCP Server"]
+        end
+
+        AUTH --> CTX --> SKILL --> ROUTER
+        ROUTER --> CLAUDE
+        ROUTER --> CODEX
+        CLAUDE --> RAG
+        CLAUDE --> SKILLS
+        CLAUDE --> MEM
+        CLAUDE --> MCP
+        CODEX --> RAG
+        CODEX --> SKILLS
+        CODEX --> MCP
+    end
+
+    subgraph Data["Data Layer"]
+        direction LR
+        PG["🐘 PostgreSQL<br/>Users · Memory<br/>Votes · Sessions"]
+        VEC["🔍 pgvector / Qdrant<br/>Canon Embeddings<br/>Skill Embeddings"]
+        RED["⚡ Redis<br/>Session Cache<br/>Rate Limits<br/>Entitlements"]
+        S3["📦 S3 / R2<br/>Canon Sources<br/>Export Bundles"]
+    end
+
+    subgraph External["External Services"]
+        direction LR
+        IC["🎫 Intercom<br/>Ticket Creation"]
+        FH["🔐 FloxHub<br/>Auth · Environments<br/>Entitlements"]
+        CF["🏗️ Canon Forge<br/>Build · Test · Validate"]
+    end
+
+    SL & DC & EM & CLI & CP -->|"Normalized<br/>Messages"| CentralAPI
+    CentralAPI -->|"Formatted<br/>Responses"| SL & DC & EM & CLI & CP
+
+    SL & DC & EM & CLI & CP -.->|"Async"| EventBus
+    CentralAPI -.->|"Side Effects"| EventBus
+
+    EventBus --> StreamProc
+    EventBus --> IC
+
+    CentralAPI --> Data
+    CentralAPI <--> FH
+    StreamProc --> Data
+
+    CF -->|"Embeddings"| VEC
+    F1 & F3 -->|"Canon Improvements"| CF
+
+    classDef channel fill:#4a5568,stroke:#e2e8f0,color:#e2e8f0,stroke-width:2px
+    classDef kafka fill:#2d3748,stroke:#ed8936,color:#ed8936,stroke-width:2px
+    classDef flink fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef brain fill:#1a202c,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef llm fill:#2a4365,stroke:#90cdf4,color:#90cdf4,stroke-width:2px
+    classDef knowledge fill:#22543d,stroke:#9ae6b4,color:#9ae6b4,stroke-width:2px
+    classDef data fill:#44337a,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+    classDef external fill:#553c22,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+
+    class SL,DC,EM,CLI,CP channel
+    class TI,TO,TV,TC,TE,TF,TX,TT kafka
+    class F1,F2,F3,F4 flink
+    class AUTH,CTX,SKILL,ROUTER brain
+    class CLAUDE,CODEX llm
+    class RAG,SKILLS,MEM,MCP knowledge
+    class PG,VEC,RED,S3 data
+    class IC,FH,CF external

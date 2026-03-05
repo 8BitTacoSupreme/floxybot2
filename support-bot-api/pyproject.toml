@@ -1,0 +1,36 @@
+[project]
+name = "support-bot-api"
+version = "0.1.0"
+description = "FloxBot Central API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110,<1",
+    "uvicorn[standard]>=0.27,<1",
+    "httpx>=0.27,<1",
+    "anthropic>=0.40,<1",
+    "voyageai>=0.3,<1",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.30,<1",
+    "pgvector>=0.3,<1",
+    "redis>=5.0,<6",
+    "aiokafka>=0.11,<1",
+    "alembic>=1.13,<2",
+    "support-bot-shared",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=4.0,<6",
+    "fakeredis>=2.20,<3",
+    "httpx>=0.27,<1",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

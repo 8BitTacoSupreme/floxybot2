@@ -1,0 +1,88 @@
+---
+title: "Flox Co-Pilot Architecture"
+---
+graph TB
+    subgraph Local["Co-Pilot (Local Flox Environment)"]
+        direction TB
+        
+        subgraph Modes["Operating Modes"]
+            ASK["💬 ASK<br/>Single-shot Q&A"]
+            CHAT["🔄 CHAT<br/>Multi-turn conversation"]
+            DIAG["🔍 DIAGNOSE<br/>Environment analysis"]
+            LEARN["📚 LEARN<br/>Guided growth paths<br/>(Pro/Enterprise)"]
+            FBACK["📝 FEEDBACK<br/>Field intelligence<br/>(Pro/Enterprise)"]
+            TICKET["🎫 TICKET<br/>Triaged support<br/>(Pro/Enterprise)"]
+        end
+
+        subgraph LocalState["Local State ($FLOX_ENV_CACHE/copilot/)"]
+            LCANON["📖 Local Canon<br/>SQLite + ChromaDB<br/>Core + active skills"]
+            LMEM["🧠 Local Memory<br/>SQLite<br/>Sessions · skill level<br/>project patterns"]
+            VQUEUE["📋 Vote Queue<br/>votes.jsonl<br/>(offline buffer)"]
+            FBQUEUE["📋 Feedback Queue<br/>feedback.jsonl<br/>(offline buffer)"]
+            TQUEUE["📋 Ticket Drafts<br/>tickets.jsonl<br/>(offline buffer)"]
+        end
+
+        subgraph Context["Context Detection"]
+            FLOXDIR[".flox/ directory<br/>manifest.toml<br/>env.json"]
+            SKILLDET["Skill Detection<br/>from manifest packages"]
+            PROJCTX["Project Context<br/>injection"]
+        end
+
+        FLOXDIR --> SKILLDET --> PROJCTX
+        ASK & CHAT & DIAG --> PROJCTX
+        LEARN --> LMEM
+        FBACK --> FBQUEUE
+        TICKET --> TQUEUE
+    end
+
+    subgraph Auth["FloxHub Auth"]
+        TOKEN["~/.config/flox/<br/>floxhub_token"]
+        RESOLVE["Entitlement<br/>Resolution"]
+    end
+
+    subgraph Central["Central API (The Borg)"]
+        CAPI["Central API"]
+        CMEM["User Memory Store"]
+        CCANON["Canon Engine<br/>(full corpus)"]
+        CVOTES["Vote Pipeline<br/>(Kafka)"]
+        CFB["Feedback Pipeline"]
+        CIC["Intercom Bridge"]
+    end
+
+    %% Auth flow
+    TOKEN -->|"On activate"| RESOLVE
+    RESOLVE -->|"Tier: pro"| Local
+
+    %% Online sync
+    LCANON <-->|"Pull: core +<br/>active skills"| CCANON
+    LMEM <-->|"Push/Pull:<br/>bidirectional"| CMEM
+
+    %% Queue flush (on connectivity)
+    VQUEUE -->|"Flush on sync"| CVOTES
+    FBQUEUE -->|"Flush on sync"| CFB
+    TQUEUE -->|"Flush on sync"| CIC
+
+    %% Online request path
+    ASK & CHAT & DIAG & LEARN -->|"Online: HTTP"| CAPI
+    ASK & CHAT & DIAG -->|"Offline: local<br/>canon (degraded)"| LCANON
+
+    %% Sync triggers annotation
+    SYNC["Sync Triggers:<br/>• On activate (background)<br/>• Manual: copilot-sync<br/>• On ticket submit (foreground)<br/>• Every 4 hours if active"]
+
+    SYNC -.-> Local
+
+    classDef mode fill:#2a4365,stroke:#90cdf4,color:#90cdf4,stroke-width:2px
+    classDef entitled fill:#553c22,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+    classDef state fill:#22543d,stroke:#9ae6b4,color:#9ae6b4,stroke-width:2px
+    classDef context fill:#4a5568,stroke:#e2e8f0,color:#e2e8f0,stroke-width:2px
+    classDef auth fill:#44337a,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+    classDef central fill:#1a202c,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef info fill:#2d3748,stroke:#718096,color:#a0aec0,stroke-width:1px,stroke-dasharray:5
+
+    class ASK,CHAT,DIAG mode
+    class LEARN,FBACK,TICKET entitled
+    class LCANON,LMEM,VQUEUE,FBQUEUE,TQUEUE state
+    class FLOXDIR,SKILLDET,PROJCTX context
+    class TOKEN,RESOLVE auth
+    class CAPI,CMEM,CCANON,CVOTES,CFB,CIC central
+    class SYNC info

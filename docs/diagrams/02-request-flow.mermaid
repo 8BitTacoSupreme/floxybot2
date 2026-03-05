@@ -1,0 +1,57 @@
+---
+title: "Request Flow — Hot Path"
+---
+sequenceDiagram
+    actor User
+    participant Adapter as Channel Adapter<br/>(Slack / Discord / CLI / Co-Pilot)
+    participant API as Central API
+    participant Auth as Auth + Entitlement
+    participant Ctx as Context Engine
+    participant Det as Skill Detection
+    participant Router as Router
+    participant LLM as LLM Backend<br/>(Claude / Codex)
+    participant RAG as Canon + RAG
+    participant Mem as User Memory
+    participant Kafka as Kafka<br/>(async)
+
+    User ->> Adapter: Message
+    Adapter ->> Adapter: Normalize message<br/>+ inject project context<br/>(.flox/ detection)
+
+    Adapter ->> API: POST /chat (normalized msg)
+    
+    API ->> Auth: Validate token
+    Auth -->> API: Tier: pro, rate: OK
+
+    API ->> Ctx: Build context
+    Ctx ->> Mem: Load user memory (Tier 1)
+    Mem -->> Ctx: Past issues, skill level,<br/>preferred tools
+    
+    Ctx ->> Ctx: Check cross-channel<br/>session (Flink output)
+
+    API ->> Det: Detect skills
+    Det ->> Det: Manifest has terraform + aws
+    Det -->> API: Load skill:terraform (primary)<br/>+ skill:aws (secondary)
+
+    API ->> Router: Classify intent
+    Router ->> Router: "terraform plan failing"<br/>→ DIAGNOSTIC → Claude
+
+    Router ->> RAG: Query canon
+    RAG -->> Router: Top-k relevant chunks<br/>+ skill-specific Q&A
+
+    Router ->> LLM: Prompt with:<br/>System + User Memory + RAG<br/>+ skill:terraform (full)<br/>+ skill:aws (summary)<br/>+ manifest context
+
+    LLM -->> Router: Response
+
+    Router -->> API: Response + confidence score
+    API -->> Adapter: Formatted response + vote buttons
+    Adapter -->> User: Platform-native rendering
+
+    Note over Adapter,Kafka: Async side effects (after response sent)
+    
+    Adapter -) Kafka: Publish to .inbound
+    API -) Kafka: Publish response to .outbound
+    API -) Kafka: Publish context to .context
+
+    Note over User,Adapter: User votes
+    User ->> Adapter: 👍 Helpful
+    Adapter -) Kafka: Publish to .votes

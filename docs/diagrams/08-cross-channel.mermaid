@@ -1,0 +1,94 @@
+---
+title: "Cross-Channel Identity + Awareness"
+---
+graph TB
+    subgraph Identity["Identity Resolution"]
+        direction TB
+        
+        subgraph ChannelIDs["Channel Identities"]
+            SID["Slack: U04ABCDEF<br/>email: jeremy@flox.dev"]
+            DID["Discord: jeremy#1234<br/>email: jeremy@flox.dev"]
+            EID["Email: jeremy@flox.dev"]
+            CID["CLI: FloxHub token<br/>username: jeremy"]
+            CPID["Co-Pilot: FloxHub token<br/>username: jeremy"]
+        end
+
+        LINK["Identity Linker<br/>Primary: FloxHub username<br/>Fallback: email"]
+        
+        CANONICAL["Canonical User ID<br/>usr_abc123<br/><br/>All memory, votes, history<br/>unified under single ID"]
+
+        SID & DID & EID & CID & CPID --> LINK --> CANONICAL
+    end
+
+    subgraph Awareness["Cross-Channel Awareness"]
+        direction TB
+
+        subgraph High["🟢 HIGH CONFIDENCE — Always Surface"]
+            HA["Same user + same topic"]
+            HB["Semantic similarity > 0.85"]
+            HC["Within 24 hours"]
+            HD["→ 'I see you were working on this<br/>in Slack. Pick up where we left off?'"]
+        end
+
+        subgraph Medium["🟡 MEDIUM CONFIDENCE — Surface Gently"]
+            MA["Same user + related topic"]
+            MB["Similarity 0.60 – 0.85"]
+            MC["Within 72 hours"]
+            MD["→ 'This might be related to the k8s<br/>issue you mentioned. Same project?'"]
+        end
+
+        subgraph Low["🔵 LOW CONFIDENCE — Use Silently"]
+            LA["Same user + loosely related"]
+            LB["Similarity 0.40 – 0.60"]
+            LC["Any timeframe"]
+            LD["→ Don't mention. Use context to<br/>inform response quality silently."]
+        end
+
+        subgraph Never["🔴 NEVER Surface"]
+            NA["Unlinked accounts"]
+            NB["Private DMs → public channel"]
+            NC["Reveals user's channel presence"]
+            ND["Always: public channels use<br/>context silently or not at all"]
+        end
+    end
+
+    subgraph FlinkJob["Flink: Session Correlation"]
+        FIN["floxbot.messages.inbound<br/>(all channels)"]
+        FSW["Session Window<br/>30-min gap<br/>Key: canonical_user_id"]
+        FEM["Extract topic embedding"]
+        FCMP["Compare across channels<br/>within window"]
+        FOUT["Emit to .sessions.xc<br/>with confidence score"]
+
+        FIN --> FSW --> FEM --> FCMP --> FOUT
+    end
+
+    subgraph Privacy["Privacy Contract"]
+        direction TB
+        PR1["👁️ KNOW — Onboarding explains<br/>cross-channel memory"]
+        PR2["🎛️ CONTROL — /floxbot privacy<br/>shows links, lets you unlink"]
+        PR3["🔒 SCOPE — 'Don't share from<br/>my DMs' setting"]
+        PR4["💡 BENEFIT — Value must be<br/>obvious (not repeating yourself)"]
+    end
+
+    CANONICAL --> FlinkJob
+    FOUT -->|"Score > 0.85"| High
+    FOUT -->|"Score 0.60–0.85"| Medium
+    FOUT -->|"Score 0.40–0.60"| Low
+
+    classDef channel fill:#2d3748,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef link fill:#1a202c,stroke:#e2e8f0,color:#e2e8f0,stroke-width:2px
+    classDef high fill:#22543d,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef medium fill:#553c22,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+    classDef low fill:#2a4365,stroke:#90cdf4,color:#90cdf4,stroke-width:2px
+    classDef never fill:#63171b,stroke:#fc8181,color:#fc8181,stroke-width:2px
+    classDef flink fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef privacy fill:#44337a,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+
+    class SID,DID,EID,CID,CPID channel
+    class LINK,CANONICAL link
+    class HA,HB,HC,HD high
+    class MA,MB,MC,MD medium
+    class LA,LB,LC,LD low
+    class NA,NB,NC,ND never
+    class FIN,FSW,FEM,FCMP,FOUT flink
+    class PR1,PR2,PR3,PR4 privacy

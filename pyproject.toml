@@ -1,0 +1,17 @@
+[project]
+name = "floxbot"
+version = "0.1.0"
+description = "FloxBot — multi-channel support system for Flox users"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "db: tests that require a real PostgreSQL database",
+    "slow: tests that take a long time to run",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

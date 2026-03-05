@@ -1,0 +1,93 @@
+---
+title: "Entitlement Model + Signal Flywheel"
+---
+graph TB
+    subgraph AuthFlow["Auth + Resolution"]
+        direction TB
+        REQ["Request Arrives"]
+        EXT["Extract Identity<br/>(FloxHub token, Slack ID,<br/>Discord ID, email)"]
+        CACHE["Check Redis Cache<br/>TTL: 1 hour"]
+        HUB["Query FloxHub API<br/>GET /users/{id}/entitlement"]
+        GATE["Apply Feature Gates"]
+
+        REQ --> EXT --> CACHE
+        CACHE -->|"Hit"| GATE
+        CACHE -->|"Miss"| HUB --> GATE
+    end
+
+    subgraph Community["🌐 COMMUNITY (Free)"]
+        direction TB
+        C1["✅ L1 support (all channels)"]
+        C2["✅ Basic skill detection"]
+        C3["✅ Vote on responses"]
+        C4["✅ CLI ask / chat"]
+        C5["✅ Local canon (core only)"]
+        C6["✅ Basic memory (30 days)"]
+        C7["❌ No learn mode"]
+        C8["❌ No ticket creation"]
+        C9["❌ No field feedback"]
+        C10["❌ Rate limited"]
+    end
+
+    subgraph Pro["⭐ PRO (Paid)"]
+        direction TB
+        P1["✅ Everything in Community"]
+        P2["✅ L2 support (deep debug)"]
+        P3["✅ Full skill package library"]
+        P4["✅ Co-Pilot learn mode"]
+        P5["✅ Co-Pilot diagnose mode"]
+        P6["✅ Triaged ticket creation"]
+        P7["✅ Field feedback pipeline"]
+        P8["✅ Full memory (unlimited)"]
+        P9["✅ Codex access"]
+        P10["✅ Higher rate limits"]
+    end
+
+    subgraph Enterprise["🏢 ENTERPRISE (Org)"]
+        direction TB
+        E1["✅ Everything in Pro"]
+        E2["✅ Org-wide knowledge layer"]
+        E3["✅ Custom skill packages"]
+        E4["✅ SSO integration"]
+        E5["✅ Admin dashboard"]
+        E6["✅ Priority escalation + SLA"]
+        E7["✅ Environment telemetry"]
+        E8["✅ Private bot instance"]
+    end
+
+    GATE --> Community
+    GATE --> Pro
+    GATE --> Enterprise
+
+    subgraph Flywheel["Signal Flywheel"]
+        direction TB
+        SIG1["📊 Community Signal<br/>Votes only<br/>(volume)"]
+        SIG2["📊 Pro Signal<br/>Votes + Feedback<br/>+ Tickets + Telemetry<br/>(rich)"]
+        SIG3["📊 Enterprise Signal<br/>All above + Org patterns<br/>(strategic)"]
+
+        IMP["Canon Improvement"]
+        BETTER["Better Support<br/>for Everyone"]
+
+        SIG1 --> IMP
+        SIG2 -->|"Highest quality<br/>signal"| IMP
+        SIG3 --> IMP
+        IMP --> BETTER
+        BETTER -->|"More users<br/>more votes"| SIG1
+        BETTER -->|"Value justifies<br/>upgrade"| SIG2
+    end
+
+    Community -->|"Generates"| SIG1
+    Pro -->|"Generates"| SIG2
+    Enterprise -->|"Generates"| SIG3
+
+    classDef auth fill:#2d3748,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef community fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef pro fill:#2d3748,stroke:#ed8936,color:#ed8936,stroke-width:2px
+    classDef enterprise fill:#2d3748,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+    classDef flywheel fill:#1a202c,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+
+    class REQ,EXT,CACHE,HUB,GATE auth
+    class C1,C2,C3,C4,C5,C6,C7,C8,C9,C10 community
+    class P1,P2,P3,P4,P5,P6,P7,P8,P9,P10 pro
+    class E1,E2,E3,E4,E5,E6,E7,E8 enterprise
+    class SIG1,SIG2,SIG3,IMP,BETTER flywheel

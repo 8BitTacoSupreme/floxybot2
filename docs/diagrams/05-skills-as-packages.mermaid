@@ -1,0 +1,82 @@
+---
+title: "Skills as Packages — Detection + Loading"
+---
+graph TB
+    subgraph Signals["Detection Signals (ranked by confidence)"]
+        S1["🟢 HIGH: Manifest Inspection<br/>kubectl → skill:k8s<br/>terraform → skill:terraform<br/>awscli2 → skill:aws<br/>docker → skill:docker"]
+        S2["🟡 MEDIUM: Message Analysis<br/>'k8s pod crashing' → skill:k8s<br/>'ECS task def' → skill:aws"]
+        S3["🔵 SUPPORTING: User Memory<br/>'User works with AWS + Terraform'<br/>Break ties, pre-load likely skills"]
+        S4["⚪ ACCUMULATING: Session History<br/>Prior messages referenced k8s<br/>→ keep skill:k8s loaded"]
+    end
+
+    DET["Skill Detection Engine"]
+    S1 --> DET
+    S2 --> DET
+    S3 --> DET
+    S4 --> DET
+
+    subgraph Registry["Skill Package Registry (FloxHub)"]
+        direction TB
+        SK1["skill:k8s v1.3.0<br/>340kb"]
+        SK2["skill:terraform v2.1.0<br/>280kb"]
+        SK3["skill:aws v1.8.0<br/>420kb"]
+        SK4["skill:gcp v1.2.0<br/>310kb"]
+        SK5["skill:docker v1.5.0<br/>260kb"]
+        SK6["skill:postgres v1.1.0<br/>190kb"]
+        SK7["skill:rust v1.0.0<br/>220kb"]
+        SK8["skill:python v1.4.0<br/>250kb"]
+    end
+
+    subgraph Package["Each Skill Package Contains"]
+        direction TB
+        P1["SKILL.md — Primary knowledge"]
+        P2["prompts/ — Diagnostic + pattern prompts"]
+        P3["examples/ — Annotated manifest examples"]
+        P4["qa/ — Curated Q&A pairs"]
+        P5["embeddings/ — Pre-computed vectors"]
+        P6["metadata.json — Triggers, version, deps"]
+    end
+
+    DET -->|"Resolve"| Registry
+
+    subgraph Budget["Context Window Budget (128k)"]
+        direction TB
+        B1["System + Flox Core — 8k<br/>(always loaded)"]
+        B2["User Memory — 2k"]
+        B3["RAG Results — 6k"]
+        B4["★ Primary Skill (full) — 8k<br/>SKILL.md + examples + Q&A"]
+        B5["★ Secondary Skill (summary) — 4k<br/>Summary + targeted Q&A only"]
+        B6["Conversation History — 8k"]
+        B7["Project Context — 2k"]
+        B8["Co-Pilot State — 2k"]
+        B9["Response Headroom — 4k"]
+    end
+
+    Registry -->|"Max 2 skills<br/>per turn"| Budget
+
+    subgraph Lifecycle["Skill Lifecycle"]
+        direction LR
+        L1["Author"] --> L2["Test in<br/>Canon Forge"]
+        L2 --> L3["Publish to<br/>FloxHub"]
+        L3 --> L4["Bot loads<br/>dynamically"]
+        L4 --> L5["Users vote<br/>on responses"]
+        L5 --> L6["Votes feed<br/>skill Q&A"]
+        L6 --> L7["Maintainer<br/>updates"]
+        L7 --> L3
+    end
+
+    classDef signal fill:#2d3748,stroke:#48bb78,color:#48bb78,stroke-width:2px
+    classDef detect fill:#1a202c,stroke:#63b3ed,color:#63b3ed,stroke-width:2px
+    classDef skill fill:#2d3748,stroke:#ed8936,color:#ed8936,stroke-width:2px
+    classDef pkg fill:#2d3748,stroke:#d6bcfa,color:#d6bcfa,stroke-width:2px
+    classDef budget fill:#2d3748,stroke:#90cdf4,color:#90cdf4,stroke-width:1px
+    classDef budgetstar fill:#2a4365,stroke:#fbd38d,color:#fbd38d,stroke-width:2px
+    classDef life fill:#22543d,stroke:#9ae6b4,color:#9ae6b4,stroke-width:2px
+
+    class S1,S2,S3,S4 signal
+    class DET detect
+    class SK1,SK2,SK3,SK4,SK5,SK6,SK7,SK8 skill
+    class P1,P2,P3,P4,P5,P6 pkg
+    class B1,B2,B3,B6,B7,B8,B9 budget
+    class B4,B5 budgetstar
+    class L1,L2,L3,L4,L5,L6,L7 life
