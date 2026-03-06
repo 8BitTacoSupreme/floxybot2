@@ -11,6 +11,7 @@ import anthropic
 
 from ..models.types import BuiltContext, SkillPackage
 from .prompts import build_messages, build_system_prompt
+from .tools import MCP_TOOLS, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +38,60 @@ async def call_claude(
     history = context.conversation_history if context.conversation_history else []
     messages = build_messages(text, code_blocks, history)
 
-    # Call Anthropic API
+    # Call Anthropic API with tool-use support
     client = anthropic.AsyncAnthropic(api_key=settings.CLAUDE_API_KEY)
+    max_tool_rounds = 3
+    total_timeout = 45.0
+
     try:
+        import time
+        start_time = time.monotonic()
+
         response = await client.messages.create(
             model=settings.CLAUDE_MODEL,
             max_tokens=4096,
             system=system_prompt,
             messages=messages,
+            tools=MCP_TOOLS,
         )
+
+        # Tool-use loop: if Claude requests a tool, execute and continue
+        tool_round = 0
+        while response.stop_reason == "tool_use" and tool_round < max_tool_rounds:
+            elapsed = time.monotonic() - start_time
+            if elapsed > total_timeout:
+                logger.warning("Tool-use loop exceeded %.0fs timeout", total_timeout)
+                break
+
+            tool_round += 1
+
+            # Append assistant's response (with tool_use blocks) to messages
+            messages.append({"role": "assistant", "content": response.content})
+
+            # Execute each tool_use block and build tool_result messages
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    logger.info("Tool call %d: %s(%s)", tool_round, block.name, block.input)
+                    result_str = await execute_tool(
+                        block.name, block.input, timeout=settings.MCP_TOOL_TIMEOUT
+                    )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_str,
+                    })
+
+            messages.append({"role": "user", "content": tool_results})
+
+            response = await client.messages.create(
+                model=settings.CLAUDE_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages,
+                tools=MCP_TOOLS,
+            )
+
     except anthropic.APIError as e:
         logger.error("Claude API error: %s", e)
         return {
@@ -60,8 +106,11 @@ async def call_claude(
             "suggested_votes": False,
         }
 
-    # Parse response
-    response_text = response.content[0].text if response.content else ""
+    # Parse response — extract text blocks from the final response
+    response_text = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            response_text += block.text
     extracted_code = extract_code_blocks(response_text)
     confidence = estimate_confidence(response_text, context)
 

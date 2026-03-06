@@ -1,0 +1,23 @@
+{
+  "name": "floxbot-discord",
+  "version": "0.3.0",
+  "description": "FloxBot Discord adapter — discord.js with Gateway WebSocket",
+  "main": "dist/bot.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/bot.js",
+    "dev": "ts-node src/bot.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.0",
+    "axios": "^1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.6.0"
+  }
+}

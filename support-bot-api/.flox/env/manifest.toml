@@ -7,6 +7,8 @@ postgresql.pkg-path = "postgresql_16"
 pgvector.pkg-path = "postgresql16Packages.pgvector"
 redis.pkg-path = "redis"
 kafka.pkg-path = "apacheKafka"
+flox-mcp-server.pkg-path = "flox/flox-mcp-server"
+flox-mcp-server.pkg-group = "flox-mcp-server"
 
 [vars]
 FLOXBOT_DB_NAME = "floxbot"

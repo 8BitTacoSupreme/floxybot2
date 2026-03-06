@@ -18,7 +18,7 @@ CODEX_MODEL = os.environ.get("FLOXBOT_CODEX_MODEL", "claude-sonnet-4-6")
 # Voyage embeddings
 VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
 EMBEDDING_MODEL = os.environ.get("FLOXBOT_EMBEDDING_MODEL", "voyage-3-lite")
-EMBEDDING_DIMENSION = int(os.environ.get("FLOXBOT_EMBEDDING_DIMENSION", "1024"))
+EMBEDDING_DIMENSION = int(os.environ.get("FLOXBOT_EMBEDDING_DIMENSION", "512"))
 
 # Kafka
 KAFKA_BOOTSTRAP = os.environ.get("FLOXBOT_KAFKA_BOOTSTRAP", "localhost:9092")
@@ -40,8 +40,10 @@ VECTOR_STORE_URL = os.environ.get(
     "postgresql+asyncpg://floxbot:floxbot@localhost:5432/floxbot",
 )
 
-# FloxHub auth
+# FloxHub auth + API
 FLOXHUB_AUTH_DIR = Path(os.environ.get("FLOXHUB_AUTH_DIR", str(Path.home() / ".flox")))
+FLOXHUB_API_URL = os.environ.get("FLOXHUB_API_URL", "https://hub.flox.dev/api/v1")
+FLOXBOT_TIER_OVERRIDE = os.environ.get("FLOXBOT_TIER_OVERRIDE", "")
 
 # Canon / RAG
 CANON_SOURCE_DIR = os.environ.get("FLOXBOT_CANON_SOURCE_DIR", "./skills")

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+
+# Preserve Phase 1 behavior: authenticated users get pro tier
+os.environ.setdefault("FLOXBOT_TIER_OVERRIDE", "pro")
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,6 +45,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
         async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
         _tables_created = True
 
@@ -89,8 +93,8 @@ def mock_claude():
 def mock_voyage():
     """Patch the Voyage client to return fake embeddings."""
     mock_result = MagicMock()
-    # Return 1024-dim vectors of zeros
-    mock_result.embeddings = [[0.0] * 1024]
+    # Return 512-dim vectors of zeros (voyage-3-lite dimension)
+    mock_result.embeddings = [[0.0] * 512]
 
     mock_client = MagicMock()
     mock_client.embed = MagicMock(return_value=mock_result)

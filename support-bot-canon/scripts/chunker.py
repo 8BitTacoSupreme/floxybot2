@@ -137,6 +137,101 @@ def _split_section(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
+def chunk_document_directory(
+    dir_path: str | Path,
+    doc_type: str = "skill",
+    skill_name: str = "",
+    chunk_size: int = 512,
+    overlap: int = 64,
+) -> list[Chunk]:
+    """Recursively chunk all documents in a directory.
+
+    Supports .md, .html (strips tags to markdown), and .toml (plain text).
+    Sets ``doc_type`` and ``skill_name`` in chunk metadata.
+    """
+    dir_path = Path(dir_path)
+    if not skill_name:
+        skill_name = dir_path.name
+    all_chunks: list[Chunk] = []
+
+    for filepath in sorted(dir_path.rglob("*")):
+        if not filepath.is_file():
+            continue
+        suffix = filepath.suffix.lower()
+        if suffix in (".md", ".markdown"):
+            chunks = chunk_markdown(filepath, chunk_size=chunk_size, overlap=overlap, skill_name=skill_name)
+        elif suffix in (".html", ".htm"):
+            chunks = _chunk_html_file(filepath, chunk_size=chunk_size, overlap=overlap, skill_name=skill_name)
+        elif suffix == ".toml":
+            chunks = _chunk_plain_file(filepath, chunk_size=chunk_size, overlap=overlap, skill_name=skill_name)
+        else:
+            continue
+
+        for c in chunks:
+            c.metadata["doc_type"] = doc_type
+            c.chunk_index = len(all_chunks)
+            all_chunks.append(c)
+
+    return all_chunks
+
+
+def _chunk_html_file(
+    filepath: Path,
+    chunk_size: int = 512,
+    overlap: int = 64,
+    skill_name: str = "",
+) -> list[Chunk]:
+    """Strip HTML tags and chunk as plain text."""
+    text = filepath.read_text(errors="replace")
+    # Simple tag stripping (no external dep required)
+    clean = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", text, flags=re.IGNORECASE)
+    clean = re.sub(r"<style[^>]*>[\s\S]*?</style>", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"<[^>]+>", " ", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    # Write to temp path for chunk_markdown reuse
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(clean)
+        tmp = Path(f.name)
+    try:
+        chunks = chunk_markdown(tmp, chunk_size=chunk_size, overlap=overlap, skill_name=skill_name)
+        # Restore original source_file
+        for c in chunks:
+            c.source_file = str(filepath)
+        return chunks
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _chunk_plain_file(
+    filepath: Path,
+    chunk_size: int = 512,
+    overlap: int = 64,
+    skill_name: str = "",
+) -> list[Chunk]:
+    """Chunk a plain text file (e.g. .toml)."""
+    text = filepath.read_text(errors="replace")
+    source = str(filepath)
+    words = text.split()
+    chunks: list[Chunk] = []
+    idx = 0
+    start = 0
+    while start < len(words):
+        end = min(start + chunk_size, len(words))
+        content = " ".join(words[start:end])
+        if content.strip():
+            chunks.append(Chunk(
+                content=content,
+                source_file=source,
+                skill_name=skill_name,
+                heading_hierarchy="",
+                chunk_index=idx,
+            ))
+            idx += 1
+        start = end - overlap if overlap and end < len(words) else end
+    return chunks
+
+
 def chunk_skill_package(skill_dir: str | Path) -> list[Chunk]:
     """Index all documents in a skill package directory.
 

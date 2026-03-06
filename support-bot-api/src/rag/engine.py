@@ -40,6 +40,9 @@ async def query_canon(
         logger.warning("Failed to embed query, returning empty results")
         return []
 
+    # Over-fetch raw results (3x top_k), boost by source type, re-sort, trim
+    fetch_limit = top_k * 3
+
     # Build the similarity search query
     # pgvector cosine distance: 1 - (a <=> b) gives cosine similarity
     distance_expr = CanonChunk.embedding.cosine_distance(query_embedding)
@@ -51,12 +54,13 @@ async def query_canon(
             CanonChunk.source_file,
             CanonChunk.skill_name,
             CanonChunk.heading_hierarchy,
+            CanonChunk.doc_type,
             CanonChunk.metadata_,
             (1 - distance_expr).label("similarity"),
         )
         .where((1 - distance_expr) >= similarity_threshold)
         .order_by(distance_expr)
-        .limit(top_k)
+        .limit(fetch_limit)
     )
 
     if skill_names:
@@ -65,18 +69,60 @@ async def query_canon(
     result = await session.execute(stmt)
     rows = result.all()
 
-    return [
-        {
+    # Apply source-type boosting (LRM pattern)
+    flox_terms = {"flox", "manifest", "activate", "environment", "hook", "service"}
+    query_has_flox_terms = bool(set(query.lower().split()) & flox_terms)
+
+    boosted = []
+    for row in rows:
+        score = float(row.similarity)
+        doc_type = row.doc_type or "skill"
+
+        # Tier 1: flox_docs and skill get highest boost
+        if doc_type in ("flox_docs", "skill"):
+            score *= 1.5
+        # Tier 2: blog posts
+        elif doc_type == "blog_post":
+            score *= 1.3
+
+        # Flox-term bonus for flox_docs
+        if query_has_flox_terms and doc_type == "flox_docs":
+            score *= 1.2
+
+        score = min(score, 1.0)
+
+        source_label = _source_label(doc_type, row.skill_name)
+
+        boosted.append({
             "id": str(row.id),
             "content": row.content,
             "source_file": row.source_file,
             "skill_name": row.skill_name,
             "heading_hierarchy": row.heading_hierarchy,
+            "doc_type": doc_type,
             "metadata": row.metadata_,
-            "similarity": float(row.similarity),
-        }
-        for row in rows
-    ]
+            "similarity": score,
+            "source_label": source_label,
+        })
+
+    boosted.sort(key=lambda r: r["similarity"], reverse=True)
+    return boosted[:top_k]
+
+
+_SOURCE_LABELS = {
+    "flox_docs": "Flox Documentation",
+    "blog_post": "Flox Blog",
+    "nix_docs": "Nix Reference",
+    "web_docs": "Flox Documentation",
+    "skill": "Skill",
+}
+
+
+def _source_label(doc_type: str, skill_name: str) -> str:
+    label = _SOURCE_LABELS.get(doc_type, doc_type.replace("_", " ").title())
+    if doc_type == "skill" and skill_name:
+        return f"Skill: {skill_name}"
+    return label
 
 
 async def query_instance_knowledge(
@@ -134,11 +180,14 @@ async def query_instance_knowledge(
 
 
 async def _embed_query(query: str) -> list[float] | None:
-    """Embed a query using Voyage AI."""
+    """Embed a query using Voyage AI directly."""
     try:
-        from scripts.embedder import VoyageEmbedder
-        embedder = VoyageEmbedder()
-        return embedder.embed_single(query)
+        import voyageai
+        from src.config import settings
+
+        client = voyageai.Client(api_key=settings.VOYAGE_API_KEY)
+        response = client.embed([query], model=settings.EMBEDDING_MODEL, input_type="query")
+        return response.embeddings[0]
     except Exception as e:
         logger.warning("Failed to embed query: %s", e)
         return None

@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth.middleware import verify_auth
+from .auth.rate_limiter import check_rate_limit, rate_limit_headers
 from .deps import (
     get_db_session,
     get_event_publisher,
@@ -33,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FloxBot Central API",
-    version="0.1.0",
+    version="0.2.0",
     description="Multi-channel support system for Flox users",
     lifespan=lifespan,
 )
@@ -41,9 +45,32 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST", "GET"],
+    allow_methods=["POST", "GET", "PUT"],
     allow_headers=["*"],
 )
+
+
+async def _auth_and_rate_limit(request: Request, redis):
+    """Shared auth + entitlement + rate limit check. Returns (auth_result, entitlements) or JSONResponse."""
+    from .auth.entitlements import resolve_entitlements
+
+    body = await request.json()
+    user_identity = body.get("user_identity", {})
+    auth_result = await verify_auth(user_identity)
+    entitlements = await resolve_entitlements(auth_result, redis_client=redis)
+
+    user_id = auth_result.canonical_user_id or auth_result.floxhub_username or "anonymous"
+    allowed, remaining = await check_rate_limit(user_id, entitlements.rate_limit_rpm, redis)
+
+    if not allowed:
+        headers = rate_limit_headers(False, 0, entitlements.rate_limit_rpm)
+        return None, None, None, JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded", "retry_after": 60},
+            headers=headers,
+        )
+
+    return auth_result, entitlements, body, None
 
 
 @app.get("/health")
@@ -59,7 +86,7 @@ async def handle_message(
 ):
     """Main message endpoint. All channel adapters hit this.
 
-    Pipeline: auth → entitlement gate → context engine → skill detection →
+    Pipeline: auth → entitlement gate → rate limit → context engine → skill detection →
     intent classification → LLM routing → response
     """
     body = await request.json()
@@ -72,13 +99,23 @@ async def handle_message(
 
     # Validate input loosely (full Pydantic validation is optional for flexibility)
     if "content" not in body or "text" not in body.get("content", {}):
-        from fastapi.responses import JSONResponse
         return JSONResponse(status_code=422, content={"detail": "Missing content.text"})
 
     # 1. Auth + entitlements
     user_identity = body.get("user_identity", {})
     auth_result = await verify_auth(user_identity)
     entitlements = await resolve_entitlements(auth_result, redis_client=redis)
+
+    # 1b. Rate limit
+    user_id = auth_result.canonical_user_id or auth_result.floxhub_username or "anonymous"
+    allowed, remaining = await check_rate_limit(user_id, entitlements.rate_limit_rpm, redis)
+    if not allowed:
+        headers = rate_limit_headers(False, 0, entitlements.rate_limit_rpm)
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded", "retry_after": 60},
+            headers=headers,
+        )
 
     # 2. Context engine (with DB session for RAG + memory)
     context = await build_context(body, entitlements, session=session)
@@ -114,6 +151,7 @@ async def handle_message(
 async def handle_vote(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
     publisher=Depends(get_event_publisher),
 ):
     """Record a vote on a bot response."""
@@ -129,6 +167,7 @@ async def handle_vote(
 async def handle_feedback(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
     publisher=Depends(get_event_publisher),
 ):
     """Record structured feedback."""
@@ -138,3 +177,148 @@ async def handle_feedback(
 
     result = await record_feedback(body, session=session, publisher=publisher)
     return result
+
+
+# --- Phase 2: Sync endpoints for Co-Pilot ---
+
+
+@app.get("/v1/canon/sync")
+async def canon_sync(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+):
+    """Return canon chunks updated since `since` for delta sync.
+
+    Query params: since (ISO datetime), skills (comma-separated), limit, offset
+    """
+    from .auth.entitlements import resolve_entitlements
+
+    # Auth check via header
+    auth_header = request.headers.get("Authorization", "")
+    floxhub_username = None
+    if auth_header.startswith("Bearer "):
+        # In production this would validate the token; for now accept as username
+        floxhub_username = auth_header.split(" ", 1)[1]
+
+    from .auth.middleware import verify_auth
+    auth_result = await verify_auth({"floxhub_username": floxhub_username} if floxhub_username else {})
+    entitlements = await resolve_entitlements(auth_result, redis_client=redis)
+
+    since_str = request.query_params.get("since", "2000-01-01T00:00:00Z")
+    skills_csv = request.query_params.get("skills", "")
+    limit = int(request.query_params.get("limit", "100"))
+    offset = int(request.query_params.get("offset", "0"))
+
+    from .db.models import CanonChunk
+    since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
+
+    stmt = select(CanonChunk).where(CanonChunk.updated_at >= since)
+    if skills_csv:
+        skill_list = [s.strip() for s in skills_csv.split(",") if s.strip()]
+        if skill_list:
+            stmt = stmt.where(CanonChunk.skill_name.in_(skill_list))
+    stmt = stmt.order_by(CanonChunk.updated_at).offset(offset).limit(limit)
+
+    result = await session.execute(stmt)
+    chunks = result.scalars().all()
+
+    return {
+        "chunks": [
+            {
+                "id": str(c.id),
+                "skill_name": c.skill_name,
+                "heading": c.heading_hierarchy,
+                "content": c.content,
+                "content_hash": c.content_hash,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            }
+            for c in chunks
+        ],
+        "count": len(chunks),
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@app.get("/v1/memory/{user_id}")
+async def get_memory(
+    user_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+):
+    """Fetch user memory."""
+    from .memory.user import get_user_memory
+
+    memory = await get_user_memory(user_id, session=session)
+    return {"user_id": user_id, "memory": memory}
+
+
+@app.put("/v1/memory/{user_id}")
+async def update_memory(
+    user_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+):
+    """Update user memory."""
+    body = await request.json()
+    from .memory.user import update_user_memory
+
+    await update_user_memory(user_id, body, session=session)
+    return {"status": "ok", "user_id": user_id}
+
+
+@app.post("/v1/votes/batch")
+async def batch_votes(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+    publisher=Depends(get_event_publisher),
+):
+    """Accept an array of votes from Co-Pilot queue flush."""
+    body = await request.json()
+
+    from .memory.votes import record_vote
+
+    votes = body if isinstance(body, list) else body.get("votes", [])
+    results = []
+    for vote_data in votes:
+        r = await record_vote(vote_data, session=session, publisher=publisher)
+        results.append(r)
+    return {"status": "ok", "count": len(results), "results": results}
+
+
+@app.post("/v1/tickets")
+async def create_ticket_endpoint(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+    publisher=Depends(get_event_publisher),
+):
+    """Create a triaged support ticket."""
+    body = await request.json()
+
+    from .memory.tickets import create_ticket
+
+    result = await create_ticket(body, session=session, publisher=publisher)
+    return result
+
+
+@app.get("/v1/entitlements")
+async def get_entitlements(
+    request: Request,
+    redis=Depends(get_redis),
+):
+    """Resolve and return entitlements for the auth header."""
+    from .auth.entitlements import resolve_entitlements
+
+    auth_header = request.headers.get("Authorization", "")
+    floxhub_username = None
+    if auth_header.startswith("Bearer "):
+        floxhub_username = auth_header.split(" ", 1)[1]
+
+    auth_result = await verify_auth({"floxhub_username": floxhub_username} if floxhub_username else {})
+    entitlements = await resolve_entitlements(auth_result, redis_client=redis)
+    return entitlements.model_dump()

@@ -40,13 +40,15 @@ def build_system_prompt(
                 f"\n--- {role_label} Skill: {skill.name} ---\n{skill.skill_md}\n"
             )
 
-    # Inject RAG results
+    # Inject RAG results with source labels and relevance scores
     if context.rag_results:
         rag_text = "\n--- Relevant Knowledge ---\n"
         for i, result in enumerate(context.rag_results, 1):
             content = result.get("content", "")
-            source = result.get("source_file", "unknown")
-            rag_text += f"\n[{i}] (from {source}):\n{content}\n"
+            source_label = result.get("source_label", result.get("source_file", "unknown"))
+            similarity = result.get("similarity", 0.0)
+            relevance_pct = int(similarity * 100)
+            rag_text += f"\n[{i}] [{source_label}] (relevance: {relevance_pct}%):\n{content}\n"
         parts.append(rag_text)
 
     # Inject user memory context
@@ -58,6 +60,18 @@ def build_system_prompt(
         if projects := mem.get("projects"):
             mem_text += f"Known projects: {projects}\n"
         parts.append(mem_text)
+
+    # Inject project context (manifest, detected skills)
+    if context.project_context:
+        proj = context.project_context
+        if proj.get("has_flox_env"):
+            proj_text = "\n--- User's Project Context ---\n"
+            proj_text += "The user is working in a directory with a Flox environment.\n"
+            if manifest := proj.get("manifest"):
+                proj_text += f"\nTheir manifest.toml:\n```toml\n{manifest}\n```\n"
+            if detected := proj.get("detected_skills"):
+                proj_text += f"Detected skills: {', '.join(detected)}\n"
+            parts.append(proj_text)
 
     # Intent-specific guidance
     if intent == "teaching":

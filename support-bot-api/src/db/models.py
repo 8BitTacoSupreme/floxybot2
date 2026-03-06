@@ -28,7 +28,10 @@ class CanonChunk(Base):
     heading_hierarchy: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     chunk_index: Mapped[int] = mapped_column(nullable=False, default=0)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1024), nullable=True)
+    doc_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="skill", index=True
+    )
+    embedding: Mapped[list[float]] = mapped_column(Vector(512), nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -114,6 +117,45 @@ class Feedback(Base):
     )
     detail: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Ticket(Base):
+    """Support tickets created via Co-Pilot or escalation."""
+
+    __tablename__ = "tickets"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    context_bundle: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    priority: Mapped[str] = mapped_column(String(32), nullable=False, default="normal")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ChannelIdentity(Base):
+    """Cross-channel user identity mapping."""
+
+    __tablename__ = "channel_identities"
+    __table_args__ = (
+        Index("uq_channel_identity", "channel", "channel_user_id", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    canonical_user_id: Mapped[str] = mapped_column(
+        String(256), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(64), nullable=False)
+    channel_user_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    linked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 

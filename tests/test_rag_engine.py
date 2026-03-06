@@ -19,7 +19,7 @@ from src.db.models import CanonChunk, Vote
 async def test_query_canon_returns_results(db_session):
     """Index chunks, query, verify results returned."""
     # Insert a test chunk with a known embedding
-    embedding = [0.1] * 1024
+    embedding = [0.1] * 512
     chunk = CanonChunk(
         source_file="test/SKILL.md",
         skill_name="core-canon",
@@ -33,11 +33,11 @@ async def test_query_canon_returns_results(db_session):
 
     # Mock the Voyage embedder to return a similar vector
     mock_embedder = MagicMock()
-    mock_embedder.embed_single.return_value = [0.1] * 1024
+    mock_embedder.embed_single.return_value = [0.1] * 512
 
     from src.rag.engine import query_canon
 
-    with patch("src.rag.engine._embed_query", return_value=[0.1] * 1024):
+    with patch("src.rag.engine._embed_query", return_value=[0.1] * 512):
         results = await query_canon(
             "how to install a package",
             session=db_session,
@@ -52,7 +52,7 @@ async def test_query_canon_returns_results(db_session):
 @pytest.mark.asyncio
 async def test_query_canon_skill_filter(db_session):
     """Filter by skill_name works."""
-    embedding = [0.2] * 1024
+    embedding = [0.2] * 512
     for skill in ["core-canon", "k8s"]:
         chunk = CanonChunk(
             source_file=f"{skill}/SKILL.md",
@@ -66,7 +66,7 @@ async def test_query_canon_skill_filter(db_session):
 
     from src.rag.engine import query_canon
 
-    with patch("src.rag.engine._embed_query", return_value=[0.2] * 1024):
+    with patch("src.rag.engine._embed_query", return_value=[0.2] * 512):
         results = await query_canon(
             "test query",
             session=db_session,
@@ -83,7 +83,7 @@ async def test_query_canon_empty_db(db_session):
     """Empty database returns empty list."""
     from src.rag.engine import query_canon
 
-    with patch("src.rag.engine._embed_query", return_value=[0.5] * 1024):
+    with patch("src.rag.engine._embed_query", return_value=[0.5] * 512):
         results = await query_canon("anything", session=db_session, similarity_threshold=0.99)
 
     assert results == []
