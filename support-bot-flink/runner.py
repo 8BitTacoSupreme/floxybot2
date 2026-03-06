@@ -25,6 +25,7 @@ CONSUMERS = {
     "canon-gaps": "jobs.canon_gap_detection:CanonGapConsumer",
     "trending": "jobs.trending_issues:TrendingIssuesConsumer",
     "feedback-router": "jobs.feedback_router:FeedbackRouterConsumer",
+    "telemetry": "jobs.telemetry_consumer:TelemetryConsumer",
 }
 
 

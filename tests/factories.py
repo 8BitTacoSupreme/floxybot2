@@ -66,6 +66,27 @@ def make_vote(**overrides) -> dict:
     return vote
 
 
+def make_org(**overrides) -> dict:
+    """Create a valid Organization dict."""
+    org = {
+        "name": "Acme Corp",
+        "slug": f"acme-{uuid.uuid4().hex[:8]}",
+    }
+    org.update(overrides)
+    return org
+
+
+def make_org_member(**overrides) -> dict:
+    """Create a valid OrgMember dict."""
+    member = {
+        "org_id": f"org_{uuid.uuid4().hex[:12]}",
+        "canonical_user_id": "usr_test1",
+        "role": "member",
+    }
+    member.update(overrides)
+    return member
+
+
 def make_feedback(**overrides) -> dict:
     """Create a valid Feedback dict."""
     fb = {

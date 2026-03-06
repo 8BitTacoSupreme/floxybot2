@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..models.types import BuiltContext, SkillPackage
+from ..models.types import BuiltContext, Entitlements, SkillPackage
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,21 @@ PACKAGE_SKILL_MAP: dict[str, str] = {
 }
 
 
+def _get_skill_search_paths(entitlements: Entitlements | None = None) -> list[str]:
+    """Return skill directory search paths based on entitlement level."""
+    from src.config import settings
+
+    paths = [settings.SKILLS_PATH]
+    if entitlements is not None and entitlements.skill_access == "custom":
+        paths.append(settings.CUSTOM_SKILLS_PATH)
+    return paths
+
+
 async def detect_and_load_skills(
     context: BuiltContext,
     message: dict[str, Any] | None = None,
     intent: str = "conversational",
+    entitlements: Entitlements | None = None,
 ) -> list[SkillPackage]:
     """Detect relevant skills and load up to 2 packages.
 
@@ -105,10 +116,12 @@ async def detect_and_load_skills(
     if not scores:
         return []
 
+    # Determine search paths based on entitlements
+    search_paths = _get_skill_search_paths(entitlements)
+
     # Apply metadata weights
-    skills_path = settings.SKILLS_PATH
     for skill_name in list(scores.keys()):
-        metadata = _load_metadata(skill_name, skills_path)
+        metadata = _load_metadata(skill_name, search_paths)
         if metadata and "weight" in metadata:
             scores[skill_name] *= metadata["weight"]
 
@@ -126,8 +139,8 @@ async def detect_and_load_skills(
             else settings.SECONDARY_SKILL_TOKEN_BUDGET
         )
 
-        skill_md = _load_skill_md(skill_name, budget, skills_path)
-        prompts = _load_diagnostic_prompts(skill_name, skills_path) if intent == "diagnostic" else []
+        skill_md = _load_skill_md(skill_name, budget, search_paths)
+        prompts = _load_diagnostic_prompts(skill_name, search_paths) if intent == "diagnostic" else []
 
         skills.append(
             SkillPackage(
@@ -169,9 +182,9 @@ def _inspect_manifest(manifest_text: str) -> list[str]:
     return list(detected)
 
 
-def _load_metadata(skill_name: str, skills_path: str) -> dict | None:
+def _load_metadata(skill_name: str, search_paths: str | list[str]) -> dict | None:
     """Load metadata.json for a skill package."""
-    skill_dir = _resolve_skill_dir(skill_name, skills_path)
+    skill_dir = _resolve_skill_dir(skill_name, search_paths)
     if not skill_dir:
         return None
 
@@ -186,9 +199,9 @@ def _load_metadata(skill_name: str, skills_path: str) -> dict | None:
         return None
 
 
-def _load_diagnostic_prompts(skill_name: str, skills_path: str) -> list[str]:
+def _load_diagnostic_prompts(skill_name: str, search_paths: str | list[str]) -> list[str]:
     """Load diagnostic prompt fragments for a skill."""
-    skill_dir = _resolve_skill_dir(skill_name, skills_path)
+    skill_dir = _resolve_skill_dir(skill_name, search_paths)
     if not skill_dir:
         return []
 
@@ -202,22 +215,26 @@ def _load_diagnostic_prompts(skill_name: str, skills_path: str) -> list[str]:
         return []
 
 
-def _resolve_skill_dir(skill_name: str, skills_path: str) -> Path | None:
-    """Resolve skill directory, trying both bare name and skill- prefix."""
-    skill_dir = Path(skills_path) / skill_name
-    if skill_dir.is_dir():
-        return skill_dir
+def _resolve_skill_dir(skill_name: str, search_paths: str | list[str]) -> Path | None:
+    """Resolve skill directory, trying paths in order with bare name and skill- prefix."""
+    if isinstance(search_paths, str):
+        search_paths = [search_paths]
 
-    skill_dir = Path(skills_path) / f"skill-{skill_name}"
-    if skill_dir.is_dir():
-        return skill_dir
+    for skills_path in search_paths:
+        skill_dir = Path(skills_path) / skill_name
+        if skill_dir.is_dir():
+            return skill_dir
+
+        skill_dir = Path(skills_path) / f"skill-{skill_name}"
+        if skill_dir.is_dir():
+            return skill_dir
 
     return None
 
 
-def _load_skill_md(skill_name: str, budget: int, skills_path: str) -> str:
+def _load_skill_md(skill_name: str, budget: int, search_paths: str | list[str]) -> str:
     """Load SKILL.md content from disk, truncated to budget."""
-    skill_dir = _resolve_skill_dir(skill_name, skills_path)
+    skill_dir = _resolve_skill_dir(skill_name, search_paths)
     if not skill_dir:
         logger.debug("Skill directory not found for %s", skill_name)
         return ""

@@ -120,7 +120,27 @@ async def flush_queues(api_client, data_dir):
     except Exception as e:
         logger.warning("Failed to flush tickets: %s", e)
 
+    # Telemetry
+    total_flushed += await flush_telemetry(api_client, data_dir)
+
     return total_flushed
+
+
+async def flush_telemetry(api_client, data_dir):
+    """Flush local telemetry JSONL queue to Central API."""
+    from .local.jsonl_queue import JSONLQueue
+
+    queue = JSONLQueue(data_dir / "telemetry.jsonl")
+    try:
+        count = await queue.flush(
+            lambda records: api_client.post_telemetry(records)
+        )
+        if count:
+            logger.info("Flushed %d telemetry records", count)
+        return count
+    except Exception as e:
+        logger.warning("Failed to flush telemetry: %s", e)
+        return 0
 
 
 async def _post_feedback_batch(api_client, records):

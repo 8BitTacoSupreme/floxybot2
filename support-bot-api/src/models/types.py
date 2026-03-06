@@ -44,6 +44,7 @@ class Entitlements(BaseModel):
     codex_enabled: bool = False
     memory_enabled: bool = False
     copilot_modes: list[str] = Field(default_factory=lambda: ["ask", "chat"])
+    org_id: str | None = None
 
 
 class SkillPackage(BaseModel):

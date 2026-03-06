@@ -130,7 +130,7 @@ async def handle_message(
     context = await build_context(body, entitlements, session=session)
 
     # 3. Skill detection + loading (max 2)
-    skills = await detect_and_load_skills(context, message=body)
+    skills = await detect_and_load_skills(context, message=body, entitlements=entitlements)
 
     # 4. Intent classification
     intent = await classify_intent(body, context, skills)
@@ -362,3 +362,77 @@ async def get_entitlements(
     auth_result = await verify_auth({"floxhub_username": floxhub_username} if floxhub_username else {})
     entitlements = await resolve_entitlements(auth_result, redis_client=redis)
     return entitlements.model_dump()
+
+
+@app.post("/v1/telemetry")
+async def handle_telemetry(
+    request: Request,
+    publisher=Depends(get_event_publisher),
+):
+    """Accept a batch of telemetry events from Co-Pilot and publish to Kafka."""
+    body = await request.json()
+    events = body if isinstance(body, list) else body.get("events", [])
+
+    for event in events:
+        try:
+            user_id = event.get("user_id", "anonymous")
+            await publisher.publish("floxbot.copilot.telemetry", user_id, event)
+        except Exception as e:
+            logger.warning("Failed to publish telemetry event: %s", e)
+
+    return {"status": "ok", "count": len(events)}
+
+
+# --- Phase 6: Admin Dashboard API ---
+
+
+@app.get("/v1/admin/org/{org_id}/stats")
+async def admin_org_stats(
+    org_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+):
+    """Get org-scoped usage stats. Enterprise auth gate."""
+    from .auth.entitlements import resolve_entitlements
+    from .admin.org_stats import get_org_stats
+
+    auth_header = request.headers.get("Authorization", "")
+    floxhub_username = None
+    if auth_header.startswith("Bearer "):
+        floxhub_username = auth_header.split(" ", 1)[1]
+
+    auth_result = await verify_auth({"floxhub_username": floxhub_username} if floxhub_username else {})
+    entitlements = await resolve_entitlements(auth_result, redis_client=redis)
+
+    if "admin_dashboard" not in entitlements.features:
+        return JSONResponse(status_code=403, content={"detail": "Enterprise feature required"})
+
+    stats = await get_org_stats(org_id, session)
+    return stats
+
+
+@app.get("/v1/admin/org/{org_id}/members")
+async def admin_org_members(
+    org_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+):
+    """Get org members. Enterprise auth gate."""
+    from .auth.entitlements import resolve_entitlements
+    from .admin.org_stats import get_org_members
+
+    auth_header = request.headers.get("Authorization", "")
+    floxhub_username = None
+    if auth_header.startswith("Bearer "):
+        floxhub_username = auth_header.split(" ", 1)[1]
+
+    auth_result = await verify_auth({"floxhub_username": floxhub_username} if floxhub_username else {})
+    entitlements = await resolve_entitlements(auth_result, redis_client=redis)
+
+    if "admin_dashboard" not in entitlements.features:
+        return JSONResponse(status_code=403, content={"detail": "Enterprise feature required"})
+
+    members = await get_org_members(org_id, session)
+    return {"org_id": org_id, "members": members}

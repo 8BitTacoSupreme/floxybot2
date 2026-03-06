@@ -92,8 +92,40 @@ class Vote(Base):
     query_text: Mapped[str] = mapped_column(Text, nullable=True)
     response_text: Mapped[str] = mapped_column(Text, nullable=True)
     skills_used: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    org_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Organization(Base):
+    """Enterprise organization."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class OrgMember(Base):
+    """Membership linking users to organizations."""
+
+    __tablename__ = "org_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    org_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    canonical_user_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(64), nullable=False, default="member")
+    joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 

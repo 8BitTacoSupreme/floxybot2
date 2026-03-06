@@ -64,7 +64,7 @@ async def build_context(
         try:
             from ..rag.engine import query_instance_knowledge
             context.instance_knowledge = await query_instance_knowledge(
-                text, session=session, top_k=3
+                text, session=session, org_id=entitlements.org_id, top_k=3
             )
         except Exception as e:
             logger.warning("Instance knowledge query failed: %s", e)

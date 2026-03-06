@@ -137,21 +137,46 @@ async def query_instance_knowledge(
     Ranks by similarity score. Phase 5 will pre-compute vote embeddings.
     """
     # Get highly-upvoted Q&A pairs
-    stmt = (
-        select(
-            Vote.query_text,
-            Vote.response_text,
-            Vote.skills_used,
-        )
-        .where(Vote.vote == "up")
-        .where(Vote.query_text.isnot(None))
-        .where(Vote.response_text.isnot(None))
-        .order_by(Vote.created_at.desc())
-        .limit(50)  # Cap candidates for on-the-fly embedding
-    )
+    base_where = [
+        Vote.vote == "up",
+        Vote.query_text.isnot(None),
+        Vote.response_text.isnot(None),
+    ]
+    cols = [Vote.query_text, Vote.response_text, Vote.skills_used]
 
-    result = await session.execute(stmt)
-    rows = result.all()
+    rows = []
+
+    # Org-scoped query: fetch org votes first, pad with global if needed
+    if org_id is not None:
+        org_stmt = (
+            select(*cols)
+            .where(*base_where)
+            .where(Vote.org_id == org_id)
+            .order_by(Vote.created_at.desc())
+            .limit(50)
+        )
+        org_result = await session.execute(org_stmt)
+        rows = list(org_result.all())
+
+        if len(rows) < top_k:
+            global_stmt = (
+                select(*cols)
+                .where(*base_where)
+                .where((Vote.org_id.is_(None)) | (Vote.org_id != org_id))
+                .order_by(Vote.created_at.desc())
+                .limit(50)
+            )
+            global_result = await session.execute(global_stmt)
+            rows.extend(global_result.all())
+    else:
+        stmt = (
+            select(*cols)
+            .where(*base_where)
+            .order_by(Vote.created_at.desc())
+            .limit(50)
+        )
+        result = await session.execute(stmt)
+        rows = list(result.all())
 
     if not rows:
         return []

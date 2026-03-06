@@ -46,6 +46,7 @@ class Settings:
 
         # Skills
         self.SKILLS_PATH = os.environ.get("FLOXBOT_SKILLS_PATH", "./skills")
+        self.CUSTOM_SKILLS_PATH = os.environ.get("FLOXBOT_CUSTOM_SKILLS_PATH", "./custom-skills")
         self.MAX_SKILLS_PER_TURN = 2
         self.PRIMARY_SKILL_TOKEN_BUDGET = 8000
         self.SECONDARY_SKILL_TOKEN_BUDGET = 4000

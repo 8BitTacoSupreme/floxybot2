@@ -42,6 +42,15 @@ async def should_escalate(
     return False
 
 
+def _resolve_priority(entitlement_tier: str) -> str:
+    """Map entitlement tier to ticket priority."""
+    if entitlement_tier == "enterprise":
+        return "urgent"
+    elif entitlement_tier == "pro":
+        return "high"
+    return "normal"
+
+
 async def create_ticket(
     message: dict[str, Any],
     context: dict[str, Any],
@@ -73,15 +82,22 @@ async def create_ticket(
     user_email = message.get("user_identity", {}).get("email", "")
     user_id = message.get("user_identity", {}).get("canonical_user_id", "unknown")
 
+    priority = _resolve_priority(entitlement_tier)
+
     body: dict[str, Any] = {
         "message_type": "inapp",
         "body": f"Support escalation from FloxBot\n\nUser message: {user_text[:500]}",
+        "priority": priority,
     }
 
     if user_email:
         body["from"] = {"type": "user", "email": user_email}
     else:
         body["from"] = {"type": "user", "id": user_id}
+
+    # Enterprise: append SLA line
+    if entitlement_tier == "enterprise":
+        body["body"] += f"\n\n[SLA] Priority: {priority} — Enterprise tier"
 
     # Pro/Enterprise: attach full sanitized context
     if entitlement_tier in ("pro", "enterprise"):
