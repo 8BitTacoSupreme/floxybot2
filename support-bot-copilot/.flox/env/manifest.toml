@@ -1,0 +1,72 @@
+# FloxBot Co-Pilot — Flox environment manifest
+version = 1
+
+[install]
+python313.pkg-path = "python313"
+sqlite.pkg-path = "sqlite"
+jq.pkg-path = "jq"
+httpx.pkg-path = "python313Packages.httpx"
+aiosqlite.pkg-path = "python313Packages.aiosqlite"
+chromadb.pkg-path = "python313Packages.chromadb"
+pydantic.pkg-path = "python313Packages.pydantic"
+
+[vars]
+FLOXBOT_COPILOT_DATA_DIR = "${FLOX_ENV_CACHE:-$HOME/.cache}/floxbot-copilot"
+FLOXBOT_API_URL = "${FLOXBOT_API_URL:-http://localhost:8000}"
+
+[hook]
+on-activate = """
+  # Create data directories (idempotent)
+  mkdir -p "$FLOXBOT_COPILOT_DATA_DIR"
+  mkdir -p "$FLOXBOT_COPILOT_DATA_DIR/chroma"
+
+  # Read FloxHub token if available
+  if [ -f "$HOME/.flox/floxhub_token" ]; then
+    export FLOXHUB_TOKEN=$(cat "$HOME/.flox/floxhub_token" 2>/dev/null | jq -r '.token // empty' 2>/dev/null || cat "$HOME/.flox/floxhub_token")
+  elif [ -f "$HOME/.flox/token" ]; then
+    export FLOXHUB_TOKEN=$(cat "$HOME/.flox/token")
+  fi
+
+  # Add project root to PYTHONPATH so 'src' package resolves
+  export PYTHONPATH="$FLOX_ENV_PROJECT:${PYTHONPATH:-}"
+
+  # Non-blocking sync on activate (best-effort, 2s timeout)
+  python3 -m src.sync_cli 2>/dev/null &
+"""
+
+[profile]
+common = """
+  # Shell helpers for Co-Pilot modes
+
+  copilot() {
+    python3 -m src.copilot "$@"
+  }
+
+  ask() {
+    python3 -m src.copilot ask "$@"
+  }
+
+  copilot-chat() {
+    python3 -m src.copilot chat "$@"
+  }
+
+  copilot-diagnose() {
+    python3 -m src.copilot diagnose "$@"
+  }
+
+  copilot-learn() {
+    python3 -m src.copilot learn "$@"
+  }
+
+  copilot-feedback() {
+    python3 -m src.copilot feedback "$@"
+  }
+
+  copilot-ticket() {
+    python3 -m src.copilot ticket "$@"
+  }
+
+  copilot-sync() {
+    python3 -m src.sync_cli
+  }
+"""

@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Optional
 
+import httpx
+
 from ..models.types import AuthResult, Entitlements
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,37 @@ def set_redis(redis_client) -> None:
     _redis_client = redis_client
 
 
+async def _query_floxhub_tier(floxhub_username: str) -> str:
+    """Query FloxHub API for the user's subscription tier.
+
+    Returns 'community' on any failure.
+    """
+    from src.config import settings
+
+    # Dev/test override
+    if settings.FLOXBOT_TIER_OVERRIDE:
+        return settings.FLOXBOT_TIER_OVERRIDE
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{settings.FLOXHUB_API_URL}/subscriptions/{floxhub_username}",
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                tier = data.get("tier", "community")
+                if tier in TIER_CONFIGS:
+                    return tier
+                logger.warning("Unknown tier '%s' from FloxHub, defaulting to community", tier)
+                return "community"
+            logger.warning("FloxHub tier query returned %d", resp.status_code)
+    except Exception as e:
+        logger.warning("FloxHub tier query failed: %s", e)
+
+    return "community"
+
+
 async def resolve_entitlements(
     auth_result: AuthResult,
     redis_client=None,
@@ -91,9 +124,10 @@ async def resolve_entitlements(
         except Exception as e:
             logger.warning("Redis cache read failed: %s", e)
 
-    # Resolve tier (in Phase 1, default to pro for authenticated users)
-    # TODO: Query FloxHub API for actual tier
-    entitlements = TIER_CONFIGS["pro"]
+    # Resolve tier via FloxHub API (or override)
+    floxhub_username = auth_result.floxhub_username or user_id
+    tier = await _query_floxhub_tier(floxhub_username)
+    entitlements = TIER_CONFIGS[tier]
 
     # Cache the result
     if rc is not None:
