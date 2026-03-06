@@ -83,6 +83,7 @@ async def handle_message(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     redis=Depends(get_redis),
+    publisher=Depends(get_event_publisher),
 ):
     """Main message endpoint. All channel adapters hit this.
 
@@ -93,6 +94,7 @@ async def handle_message(
 
     from .auth.entitlements import resolve_entitlements
     from .context.engine import build_context
+    from .events.sanitizer import sanitize_message_for_event
     from .memory.conversations import append_to_conversation
     from .router.intent import classify_intent, route_to_backend
     from .skills.loader import detect_and_load_skills
@@ -117,6 +119,13 @@ async def handle_message(
             headers=headers,
         )
 
+    # 1c. Publish sanitized inbound event (fire-and-forget)
+    try:
+        sanitized = sanitize_message_for_event(body)
+        await publisher.publish("floxbot.messages.inbound", user_id, sanitized)
+    except Exception as e:
+        logger.warning("Failed to publish inbound event: %s", e)
+
     # 2. Context engine (with DB session for RAG + memory)
     context = await build_context(body, entitlements, session=session)
 
@@ -126,8 +135,30 @@ async def handle_message(
     # 4. Intent classification
     intent = await classify_intent(body, context, skills)
 
+    # 4b. Publish context snapshot (fire-and-forget)
+    try:
+        await publisher.publish("floxbot.context.detected", user_id, {
+            "user_id": user_id,
+            "skills": [s.get("name", "unknown") if isinstance(s, dict) else str(s) for s in skills],
+            "intent": intent.value,
+        })
+    except Exception as e:
+        logger.warning("Failed to publish context event: %s", e)
+
     # 5. Route to LLM backend
     response = await route_to_backend(intent, body, context, skills, entitlements)
+
+    # 5b. Publish outbound event (fire-and-forget)
+    try:
+        response_text = response.get("text", "") if isinstance(response, dict) else ""
+        truncated = response_text[:2000] if len(response_text) > 2000 else response_text
+        await publisher.publish("floxbot.messages.outbound", user_id, {
+            "user_id": user_id,
+            "response_text": truncated,
+            "intent": intent.value,
+        })
+    except Exception as e:
+        logger.warning("Failed to publish outbound event: %s", e)
 
     # 6. Update user memory (best-effort)
     user_id = user_identity.get("canonical_user_id", "anonymous")

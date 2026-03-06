@@ -73,5 +73,11 @@ class Settings:
             os.environ.get("FLOXBOT_ENTITLEMENT_CACHE_TTL", "3600")
         )
 
+        # Intercom
+        self.INTERCOM_API_KEY = os.environ.get("FLOXBOT_INTERCOM_API_KEY", "")
+        self.INTERCOM_API_URL = os.environ.get(
+            "FLOXBOT_INTERCOM_API_URL", "https://api.intercom.io"
+        )
+
 
 settings = Settings()
