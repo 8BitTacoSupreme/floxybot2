@@ -1,0 +1,9 @@
+{
+  "name": "aws",
+  "version": "0.1.0",
+  "description": "AWS CLI and SDK tooling with Flox",
+  "triggers": ["aws", "s3", "ec2", "lambda", "iam", "cloudformation", "dynamodb", "sqs", "sns", "ecs"],
+  "weight": 0.8,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

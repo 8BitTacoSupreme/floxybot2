@@ -1,0 +1,9 @@
+{
+  "name": "postgres",
+  "version": "0.1.0",
+  "description": "PostgreSQL database management with Flox",
+  "triggers": ["postgres", "postgresql", "psql", "pg_dump", "pg_restore", "pgvector", "database", "sql"],
+  "weight": 0.8,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

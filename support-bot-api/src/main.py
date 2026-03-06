@@ -129,9 +129,18 @@ async def handle_message(
     # 5. Route to LLM backend
     response = await route_to_backend(intent, body, context, skills, entitlements)
 
-    # 6. Save conversation history (async, best-effort)
-    conversation_id = body.get("context", {}).get("conversation_id")
+    # 6. Update user memory (best-effort)
     user_id = user_identity.get("canonical_user_id", "anonymous")
+    if user_id != "anonymous":
+        try:
+            from .memory.user import build_memory_update, update_user_memory
+            mem_updates = build_memory_update(response, body, intent.value)
+            await update_user_memory(user_id, mem_updates, session=session)
+        except Exception as e:
+            logger.warning("Failed to update user memory: %s", e)
+
+    # 7. Save conversation history (async, best-effort)
+    conversation_id = body.get("context", {}).get("conversation_id")
     if conversation_id:
         try:
             await append_to_conversation(

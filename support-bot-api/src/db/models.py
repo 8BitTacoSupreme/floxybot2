@@ -62,6 +62,8 @@ class UserMemory(Base):
     projects: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     past_issues: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     preferences: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    recent_skills: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    interaction_count: Mapped[int] = mapped_column(nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )

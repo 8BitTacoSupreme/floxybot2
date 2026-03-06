@@ -12,10 +12,10 @@ from ..models.types import BuiltContext, SkillPackage
 logger = logging.getLogger(__name__)
 
 # Detection signal priority (ranked by confidence):
-# 1. Manifest inspection
-# 2. Message content analysis
-# 3. User memory
-# 4. Conversation history
+# 1. Manifest inspection (ground truth)
+# 2. Project context detected_skills
+# 3. Message content analysis
+# 4. User memory
 
 SKILL_TRIGGERS: dict[str, list[str]] = {
     "k8s": ["kubernetes", "kubectl", "k8s", "pod", "deployment", "helm", "kustomize"],
@@ -31,15 +31,32 @@ SKILL_TRIGGERS: dict[str, list[str]] = {
 # Core-canon is always implicitly available
 CORE_SKILL_TRIGGERS = ["flox", "manifest", "environment", "package", "install", "activate"]
 
+# Map manifest [install] package names → skill names
+PACKAGE_SKILL_MAP: dict[str, str] = {
+    "kubectl": "k8s", "helm": "k8s", "kustomize": "k8s", "kind": "k8s",
+    "k9s": "k8s", "minikube": "k8s",
+    "terraform": "terraform", "opentofu": "terraform",
+    "awscli2": "aws", "aws-vault": "aws", "aws-sam-cli": "aws",
+    "google-cloud-sdk": "gcp",
+    "docker": "docker", "podman": "docker", "docker-compose": "docker",
+    "postgresql": "postgres", "postgresql_16": "postgres", "pgcli": "postgres",
+    "postgresql_15": "postgres",
+    "rustc": "rust", "cargo": "rust",
+    "python3": "python", "python311": "python", "python312": "python",
+    "uv": "python", "poetry": "python",
+}
+
 
 async def detect_and_load_skills(
     context: BuiltContext,
     message: dict[str, Any] | None = None,
+    intent: str = "conversational",
 ) -> list[SkillPackage]:
     """Detect relevant skills and load up to 2 packages.
 
-    Detection signals:
-    1. Project context (detected_skills from manifest parsing)
+    Detection signals (ordered by confidence):
+    0. Manifest inspection — packages in user's manifest.toml
+    1. Project context detected_skills
     2. Message text keyword scanning
     3. User memory (recent skill usage)
 
@@ -50,8 +67,14 @@ async def detect_and_load_skills(
 
     scores: dict[str, float] = {}
 
-    # 1. Project context detected skills (highest confidence)
+    # 0. Manifest inspection (highest confidence — ground truth)
     project = context.project_context
+    if isinstance(project, dict) and project.get("manifest"):
+        manifest_skills = _inspect_manifest(project["manifest"])
+        for skill in manifest_skills:
+            scores[skill] = scores.get(skill, 0) + 3.5
+
+    # 1. Project context detected skills
     if isinstance(project, dict):
         for skill in project.get("detected_skills", []):
             scores[skill] = scores.get(skill, 0) + 3.0
@@ -82,6 +105,13 @@ async def detect_and_load_skills(
     if not scores:
         return []
 
+    # Apply metadata weights
+    skills_path = settings.SKILLS_PATH
+    for skill_name in list(scores.keys()):
+        metadata = _load_metadata(skill_name, skills_path)
+        if metadata and "weight" in metadata:
+            scores[skill_name] *= metadata["weight"]
+
     # Sort by score, take top 2
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     top_skills = ranked[: settings.MAX_SKILLS_PER_TURN]
@@ -96,13 +126,15 @@ async def detect_and_load_skills(
             else settings.SECONDARY_SKILL_TOKEN_BUDGET
         )
 
-        skill_md = _load_skill_md(skill_name, budget, settings.SKILLS_PATH)
+        skill_md = _load_skill_md(skill_name, budget, skills_path)
+        prompts = _load_diagnostic_prompts(skill_name, skills_path) if intent == "diagnostic" else []
 
         skills.append(
             SkillPackage(
                 name=skill_name,
                 role=role,
                 skill_md=skill_md,
+                prompts=prompts,
                 token_budget=budget,
             )
         )
@@ -110,16 +142,87 @@ async def detect_and_load_skills(
     return skills
 
 
+def _inspect_manifest(manifest_text: str) -> list[str]:
+    """Parse manifest.toml and map installed packages to skills."""
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib  # type: ignore[no-redef]
+
+    try:
+        parsed = tomllib.loads(manifest_text)
+    except Exception:
+        logger.debug("Failed to parse manifest for skill detection")
+        return []
+
+    install = parsed.get("install", {})
+    detected: set[str] = set()
+    for pkg_name in install:
+        # Check direct name
+        if pkg_name in PACKAGE_SKILL_MAP:
+            detected.add(PACKAGE_SKILL_MAP[pkg_name])
+        # Check pkg-path if present
+        pkg_path = install[pkg_name].get("pkg-path", "") if isinstance(install[pkg_name], dict) else ""
+        if pkg_path in PACKAGE_SKILL_MAP:
+            detected.add(PACKAGE_SKILL_MAP[pkg_path])
+
+    return list(detected)
+
+
+def _load_metadata(skill_name: str, skills_path: str) -> dict | None:
+    """Load metadata.json for a skill package."""
+    skill_dir = _resolve_skill_dir(skill_name, skills_path)
+    if not skill_dir:
+        return None
+
+    meta_path = skill_dir / "metadata.json"
+    if not meta_path.is_file():
+        return None
+
+    try:
+        return json.loads(meta_path.read_text())
+    except Exception:
+        logger.debug("Failed to parse metadata.json for %s", skill_name)
+        return None
+
+
+def _load_diagnostic_prompts(skill_name: str, skills_path: str) -> list[str]:
+    """Load diagnostic prompt fragments for a skill."""
+    skill_dir = _resolve_skill_dir(skill_name, skills_path)
+    if not skill_dir:
+        return []
+
+    diag_path = skill_dir / "prompts" / "diagnostic.md"
+    if not diag_path.is_file():
+        return []
+
+    try:
+        return [diag_path.read_text()]
+    except Exception:
+        return []
+
+
+def _resolve_skill_dir(skill_name: str, skills_path: str) -> Path | None:
+    """Resolve skill directory, trying both bare name and skill- prefix."""
+    skill_dir = Path(skills_path) / skill_name
+    if skill_dir.is_dir():
+        return skill_dir
+
+    skill_dir = Path(skills_path) / f"skill-{skill_name}"
+    if skill_dir.is_dir():
+        return skill_dir
+
+    return None
+
+
 def _load_skill_md(skill_name: str, budget: int, skills_path: str) -> str:
     """Load SKILL.md content from disk, truncated to budget."""
-    skill_dir = Path(skills_path) / skill_name
+    skill_dir = _resolve_skill_dir(skill_name, skills_path)
+    if not skill_dir:
+        logger.debug("Skill directory not found for %s", skill_name)
+        return ""
+
     skill_md_path = skill_dir / "SKILL.md"
-
-    if not skill_md_path.is_file():
-        # Try with skill- prefix
-        skill_dir = Path(skills_path) / f"skill-{skill_name}"
-        skill_md_path = skill_dir / "SKILL.md"
-
     if not skill_md_path.is_file():
         logger.debug("SKILL.md not found for %s", skill_name)
         return ""

@@ -133,7 +133,8 @@ async def query_instance_knowledge(
 ) -> list[dict[str, Any]]:
     """Query Tier 2 instance knowledge — high-voted Q&A pairs.
 
-    Finds upvoted responses that match the query topic.
+    Uses embedding similarity when possible, falls back to keyword matching.
+    Ranks by similarity score. Phase 5 will pre-compute vote embeddings.
     """
     # Get highly-upvoted Q&A pairs
     stmt = (
@@ -146,7 +147,7 @@ async def query_instance_knowledge(
         .where(Vote.query_text.isnot(None))
         .where(Vote.response_text.isnot(None))
         .order_by(Vote.created_at.desc())
-        .limit(top_k * 3)  # Over-fetch, then filter
+        .limit(50)  # Cap candidates for on-the-fly embedding
     )
 
     result = await session.execute(stmt)
@@ -155,7 +156,70 @@ async def query_instance_knowledge(
     if not rows:
         return []
 
-    # Simple keyword matching for now (will be replaced with embedding search)
+    # Try embedding-based similarity
+    query_embedding = await _embed_query(query)
+    if query_embedding is not None:
+        scored = await _score_by_embedding(query_embedding, rows)
+    else:
+        scored = _score_by_keywords(query, rows)
+
+    return [
+        {
+            "query": row.query_text,
+            "response": row.response_text,
+            "skills_used": row.skills_used,
+            "similarity": score,
+            "source": "instance_knowledge",
+        }
+        for score, row in scored[:top_k]
+    ]
+
+
+async def _score_by_embedding(
+    query_embedding: list[float], rows: list
+) -> list[tuple[float, Any]]:
+    """Score vote Q&A pairs by cosine similarity to query embedding.
+
+    Embeds candidate query texts on-the-fly (acceptable for small sets).
+    """
+    import numpy as np
+
+    q_vec = np.array(query_embedding)
+    q_norm = np.linalg.norm(q_vec)
+    if q_norm == 0:
+        return _score_by_keywords("", rows)
+
+    candidate_texts = [row.query_text for row in rows if row.query_text]
+    if not candidate_texts:
+        return []
+
+    # Batch-embed all candidate queries
+    try:
+        import voyageai
+        from src.config import settings
+
+        client = voyageai.Client(api_key=settings.VOYAGE_API_KEY)
+        response = client.embed(candidate_texts, model=settings.EMBEDDING_MODEL, input_type="query")
+        candidate_embeddings = response.embeddings
+    except Exception:
+        return _score_by_keywords("", rows)
+
+    scored = []
+    for row, c_emb in zip(rows, candidate_embeddings):
+        c_vec = np.array(c_emb)
+        c_norm = np.linalg.norm(c_vec)
+        if c_norm == 0:
+            continue
+        similarity = float(np.dot(q_vec, c_vec) / (q_norm * c_norm))
+        if similarity > 0.3:  # threshold
+            scored.append((similarity, row))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored
+
+
+def _score_by_keywords(query: str, rows: list) -> list[tuple[float, Any]]:
+    """Fallback: score by keyword overlap."""
     query_words = set(query.lower().split())
     scored = []
     for row in rows:
@@ -164,19 +228,12 @@ async def query_instance_knowledge(
         q_words = set(row.query_text.lower().split())
         overlap = len(query_words & q_words)
         if overlap > 0:
-            scored.append((overlap, row))
+            # Normalize to 0-1 range
+            score = overlap / max(len(query_words), 1)
+            scored.append((score, row))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-
-    return [
-        {
-            "query": row.query_text,
-            "response": row.response_text,
-            "skills_used": row.skills_used,
-            "source": "instance_knowledge",
-        }
-        for _, row in scored[:top_k]
-    ]
+    return scored
 
 
 async def _embed_query(query: str) -> list[float] | None:

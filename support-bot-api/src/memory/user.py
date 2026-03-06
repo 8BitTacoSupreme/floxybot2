@@ -12,6 +12,8 @@ from ..db.models import UserMemory
 
 logger = logging.getLogger(__name__)
 
+MAX_RECENT_SKILLS = 10
+
 
 async def get_user_memory(
     canonical_user_id: str,
@@ -34,6 +36,8 @@ async def get_user_memory(
         "projects": memory.projects or {},
         "past_issues": memory.past_issues or {},
         "preferences": memory.preferences or {},
+        "recent_skills": memory.recent_skills or [],
+        "interaction_count": memory.interaction_count or 0,
     }
 
 
@@ -61,6 +65,8 @@ async def update_user_memory(
             projects=updates.get("projects", {}),
             past_issues=updates.get("past_issues", {}),
             preferences=updates.get("preferences", {}),
+            recent_skills=updates.get("recent_skills", []),
+            interaction_count=updates.get("interaction_count", 1),
         )
         session.add(memory)
     else:
@@ -79,5 +85,68 @@ async def update_user_memory(
             merged = dict(memory.preferences or {})
             merged.update(updates["preferences"])
             memory.preferences = merged
+        if "recent_skills" in updates:
+            # Prepend new skills, dedup, keep last MAX_RECENT_SKILLS
+            existing = list(memory.recent_skills or [])
+            new_skills = updates["recent_skills"]
+            merged = []
+            seen = set()
+            for s in new_skills + existing:
+                if s not in seen:
+                    merged.append(s)
+                    seen.add(s)
+            memory.recent_skills = merged[:MAX_RECENT_SKILLS]
+        if "interaction_count" in updates:
+            memory.interaction_count = (memory.interaction_count or 0) + 1
 
     await session.flush()
+
+
+def build_memory_update(
+    response: dict[str, Any],
+    message: dict[str, Any],
+    intent: str,
+) -> dict[str, Any]:
+    """Build a memory update dict from an interaction.
+
+    Called after every successful LLM response. Extracts skills used,
+    project context, and infers skill level from interaction count.
+    """
+    updates: dict[str, Any] = {}
+
+    # Track skills used
+    skills_used = response.get("skills_used", [])
+    if skills_used:
+        updates["recent_skills"] = [
+            s["name"] if isinstance(s, dict) else s for s in skills_used
+        ]
+
+    # Track interaction count (triggers +1 in update_user_memory)
+    updates["interaction_count"] = 1
+
+    # Extract project context
+    project = message.get("context", {}).get("project", {})
+    if project.get("detected_skills"):
+        projects = {}
+        for skill in project["detected_skills"]:
+            projects[skill] = {"last_seen": "recent"}
+        updates["projects"] = projects
+
+    # Infer skill level from interaction patterns
+    code_blocks = message.get("content", {}).get("code_blocks", [])
+    has_manifest = bool(project.get("manifest"))
+
+    if code_blocks or has_manifest:
+        # Users who send code/manifests are at least intermediate
+        updates["skill_level"] = "intermediate"
+
+    return updates
+
+
+def infer_skill_level(interaction_count: int, has_code: bool = False) -> str:
+    """Infer skill level from interaction count and signals."""
+    if has_code and interaction_count >= 10:
+        return "advanced"
+    if has_code or interaction_count >= 10:
+        return "intermediate"
+    return "beginner"

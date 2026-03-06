@@ -58,6 +58,7 @@ class SkillPackage(BaseModel):
 class BuiltContext(BaseModel):
     user_memory: dict = Field(default_factory=dict)
     rag_results: list[dict] = Field(default_factory=list)
+    instance_knowledge: list[dict] = Field(default_factory=list)
     skills: list[SkillPackage] = Field(default_factory=list)
     project_context: dict = Field(default_factory=dict)
     conversation_history: list[dict] = Field(default_factory=list)

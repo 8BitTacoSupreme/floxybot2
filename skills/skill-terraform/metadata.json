@@ -1,0 +1,9 @@
+{
+  "name": "terraform",
+  "version": "0.1.0",
+  "description": "Terraform and OpenTofu infrastructure-as-code with Flox",
+  "triggers": ["terraform", "opentofu", "tofu", "hcl", "provider", "tfstate", "plan", "apply", "module"],
+  "weight": 0.9,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

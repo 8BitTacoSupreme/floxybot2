@@ -59,6 +59,16 @@ async def build_context(
         except Exception as e:
             logger.warning("RAG query failed: %s", e)
 
+    # 2b. Instance knowledge (Tier 2) — upvoted Q&A pairs
+    if text and session is not None:
+        try:
+            from ..rag.engine import query_instance_knowledge
+            context.instance_knowledge = await query_instance_knowledge(
+                text, session=session, top_k=3
+            )
+        except Exception as e:
+            logger.warning("Instance knowledge query failed: %s", e)
+
     # 3. Conversation history retrieval
     if conversation_id and session is not None:
         try:

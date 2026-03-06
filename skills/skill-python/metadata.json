@@ -1,0 +1,9 @@
+{
+  "name": "python",
+  "version": "0.1.0",
+  "description": "Python development environment management with Flox",
+  "triggers": ["python", "pip", "venv", "virtualenv", "poetry", "conda", "jupyter", "flask", "django", "fastapi"],
+  "weight": 0.85,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

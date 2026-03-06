@@ -1,12 +1,9 @@
 {
   "name": "core-canon",
   "version": "0.1.0",
-  "description": "Core Flox knowledge — commands, manifest, workflows",
-  "triggers": ["flox", "manifest", "environment", "package", "install", "activate"],
-  "dependencies": [],
+  "description": "Core Flox concepts, commands, and workflows",
+  "triggers": ["flox", "manifest", "environment", "activate", "install", "hook", "service", "package", "nix", "nixpkgs"],
   "weight": 1.0,
-  "token_budget": {
-    "primary": 8000,
-    "secondary": 4000
-  }
+  "token_budget": 8000,
+  "dependencies": []
 }

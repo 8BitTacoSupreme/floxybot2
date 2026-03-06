@@ -1,0 +1,9 @@
+{
+  "name": "gcp",
+  "version": "0.1.0",
+  "description": "Google Cloud Platform tooling with Flox",
+  "triggers": ["gcp", "gcloud", "google-cloud", "bigquery", "cloud-run", "cloud-functions", "gke", "pubsub", "firestore"],
+  "weight": 0.8,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

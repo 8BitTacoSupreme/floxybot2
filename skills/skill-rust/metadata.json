@@ -1,0 +1,9 @@
+{
+  "name": "rust",
+  "version": "0.1.0",
+  "description": "Rust development toolchain management with Flox",
+  "triggers": ["rust", "cargo", "rustc", "rustup", "crate", "clippy", "rustfmt"],
+  "weight": 0.8,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

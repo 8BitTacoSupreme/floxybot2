@@ -1,0 +1,9 @@
+{
+  "name": "k8s",
+  "version": "0.1.0",
+  "description": "Kubernetes tooling and cluster management with Flox",
+  "triggers": ["kubernetes", "k8s", "kubectl", "helm", "pod", "deployment", "service", "ingress", "namespace", "kustomize"],
+  "weight": 0.9,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}

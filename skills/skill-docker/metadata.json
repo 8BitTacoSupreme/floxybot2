@@ -1,0 +1,9 @@
+{
+  "name": "docker",
+  "version": "0.1.0",
+  "description": "Docker and container workflows with Flox",
+  "triggers": ["docker", "container", "dockerfile", "compose", "podman", "image", "registry", "oci"],
+  "weight": 0.85,
+  "token_budget": 8000,
+  "dependencies": ["core-canon"]
+}
